@@ -996,6 +996,8 @@ function mScript(qname, srcExpr, results){
 function compare(got, exp, checkTypes){
   if (!got) return {ok:false, title:"A step has an error.", msg:"Fix or delete the step with the warning sign, then the preview comes back."};
   const miss=exp.cols.filter(c=>!got.cols.includes(c)), extra=got.cols.filter(c=>!exp.cols.includes(c));
+  const caseOnly=miss.length&&miss.length===extra.length&&miss.every(m=>extra.some(x=>x.toLowerCase()===m.toLowerCase()));
+  if (caseOnly) return {ok:false, title:"Your data is right. Only the capitalisation of a column name differs.", msg:miss.map(m=>`"${extra.find(x=>x.toLowerCase()===m.toLowerCase())}" should be "${m}".`).join(" ")+" Power Query column names are case-sensitive: a later step or formula looking for one won't find the other. Fix it in your Rename step."};
   if (miss.length||extra.length) return {ok:false, title:"The columns don't match the target yet.", msg:`${miss.length?`Missing: ${miss.join(", ")}. `:""}${extra.length?`Not wanted: ${extra.join(", ")}.`:""}`};
   if (got.cols.join("|")!==exp.cols.join("|")) return {ok:false, title:"Right columns, wrong order.", msg:`The target order is ${exp.cols.join(", ")}.`};
   if (got.rows.length!==exp.rows.length) return {ok:false, title:`You have ${got.rows.length} rows; the target has ${exp.rows.length}.`, msg: got.rows.length>exp.rows.length?"Some rows should be filtered out or grouped.":"Too many rows were removed."};
