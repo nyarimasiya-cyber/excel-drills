@@ -201,6 +201,9 @@ details.data .tables{display:flex;flex-direction:column;gap:16px;margin-top:14px
 .hovertip b.bad{color:#ff9d8f}
 .hovertip span{opacity:.9;line-height:1.4}
 [hidden]{display:none!important}
+.tblnote{font-size:.88rem;background:var(--hl);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 6px 6px 0;max-width:72ch}
+.tblnote code{background:var(--surface);border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:.82rem}
+
 .ribbon{background:var(--grid);border:1px solid var(--line);border-radius:6px 6px 0 0;margin-bottom:-14px}
 .rtabs{display:flex;align-items:flex-end;gap:2px;padding:4px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto}
 .rtab{background:none;border:0;padding:6px 12px;font-size:.82rem;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
@@ -666,6 +669,25 @@ function textFmt(v, f){
   const pre=(f.match(/^[^#0,.%]*/)||[""])[0].replace(/"/g,"");
   return (x<0?"-":"")+pre+s+(pct?"%":""); }
 FN.TEXT=L((v,f)=>textFmt(v,toStr(f)));
+const ymd=x=>{ const d=fromSerial(x); return [d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate(),d.getUTCDay()]; };
+const numArg=v=>{ const n=toNum(v); if (isE(n)) throw n; return Math.floor(n); };
+const isWork=x=>{ const w=ymd(x)[3]; return w!==0&&w!==6; };
+const holSet=h=>new Set(h===undefined?[]:h.flat().filter(v=>typeof v==="number").map(Math.floor));
+FN.EDATE=L((s,m)=>{ try { const [y,mo,d]=ymd(numArg(s)); const k=numArg(m); const last=serial(y,mo+k+1,0); return Math.min(serial(y,mo+k,d), last); } catch(e){ return e; } });
+FN.WEEKDAY=L((s,t)=>{ try { const w=ymd(numArg(s))[3]; const ty=t===undefined||blank(t)?1:numArg(t);
+  if (ty===1) return w+1; if (ty===2) return w===0?7:w; if (ty===3) return w===0?6:w-1; return E("#NUM!","WEEKDAY return_type must be 1, 2 or 3 here (2 = Monday is 1)."); } catch(e){ return e; } });
+FN.DAYS=L((en,st)=>{ try { return numArg(en)-numArg(st); } catch(e){ return e; } });
+FN.DATEDIF=L((st,en,u)=>{ try { const a=numArg(st), b=numArg(en); if (b<a) return E("#NUM!","DATEDIF needs the start date first and the end date second."); const U=toStr(u).toUpperCase();
+  const [y1,m1,d1]=ymd(a), [y2,m2,d2]=ymd(b); let months=(y2-y1)*12+(m2-m1); if (d2<d1) months--;
+  if (U==="D") return b-a; if (U==="M") return months; if (U==="Y") return Math.floor(months/12); if (U==="YM") return months%12;
+  return E("#NUM!","DATEDIF unit must be \"d\", \"m\", \"y\" or \"ym\"."); } catch(e){ return e; } });
+FN.NETWORKDAYS=(st,en,h)=>{ const H=holSet(h); return map([st,en],(a,b)=>{ try { let x=numArg(a), y=numArg(b), sg=1; if (y<x){ [x,y]=[y,x]; sg=-1; } let n=0; for (let d=x; d<=y; d++) if (isWork(d)&&!H.has(d)) n++; return n*sg; } catch(e){ return e; } }); };
+FN.WORKDAY=(st,days,h)=>{ const H=holSet(h); return map([st,days],(a,k)=>{ try { let d=numArg(a), n=numArg(k); const step=n<0?-1:1; while (n!==0){ d+=step; if (isWork(d)&&!H.has(d)) n-=step; } return d; } catch(e){ return e; } }); };
+FN.ISOWEEKNUM=L(s=>{ try { const x=numArg(s); const d=fromSerial(x); const t=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())); const dn=(t.getUTCDay()+6)%7; t.setUTCDate(t.getUTCDate()-dn+3); const fy=new Date(Date.UTC(t.getUTCFullYear(),0,4)); return 1+Math.round(((t-fy)/864e5-3+((fy.getUTCDay()+6)%7))/7); } catch(e){ return e; } });
+FN.TODAY=()=>{ const n=new Date(); return serial(n.getFullYear(),n.getMonth()+1,n.getDate()); };
+FN.DATEVALUE=L(v=>{ const s=toStr(v).trim(); let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if (m) return serial(+m[1],+m[2],+m[3]);
+  m=s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/); if (m){ const k=MN.findIndex(x=>x.slice(0,3).toLowerCase()===m[2].slice(0,3).toLowerCase()); if (k>=0) return serial(+m[3],k+1,+m[1]); }
+  return E("#VALUE!",`DATEVALUE can't read "${s}" as a date. Try "2026-03-31" or "31 Mar 2026".`); });
 
 // ---------- evaluator ----------
 function ev(n, ctx){
@@ -1114,6 +1136,15 @@ const SIGS_XL = {
   MONTH:[["serial_number"],"Returns the month (1–12) of a date."],
   DAY:[["serial_number"],"Returns the day of the month."],
   EOMONTH:[["start_date","months"],"Last day of the month, a number of months before or after start_date."],
+  EDATE:[["start_date","months"],"The same day a number of months before or after start_date."],
+  WEEKDAY:[["serial_number","[return_type]"],"Day of the week as a number. return_type 2 makes Monday 1 and Sunday 7."],
+  DAYS:[["end_date","start_date"],"Number of days between two dates (end first)."],
+  DATEDIF:[["start_date","end_date","unit"],"Difference between dates in \"d\" days, \"m\" months or \"y\" years."],
+  NETWORKDAYS:[["start_date","end_date","[holidays]"],"Working days (Mon–Fri) between two dates, counting both ends."],
+  WORKDAY:[["start_date","days","[holidays]"],"The date a number of working days before or after start_date."],
+  ISOWEEKNUM:[["date"],"ISO week number of the year (weeks start on Monday)."],
+  TODAY:[[],"Today's date. Recalculates every time the sheet calculates."],
+  DATEVALUE:[["date_text"],"Turns a date written as text into a real date."],
   TEXT:[["value","format_text"],"Formats a number or date as text, e.g. \"mmm yyyy\" or \"#,##0\"."],
   IF:[["logical_test","[value_if_true]","[value_if_false]"],"Returns one value if the test is TRUE, another if FALSE."],
   IFS:[["logical_test1","value_if_true1","…"],"Checks tests in order and returns the value for the first TRUE one."],
@@ -1334,6 +1365,43 @@ c4:{group:"Core formulas", kind:"sheet", title:"A monthly summary with TEXT and 
  w:"Each column points at H5#, so the whole table grows if you change SEQUENCE(4) to SEQUENCE(12). That's a self-extending monthly report from three formulas.",
  m:"Using TEXT values in the SUMIFS. TEXT returns text for display; keep the real dates (H5#) for calculations."},
 
+c5:{group:"Core formulas", kind:"sheet", title:"Pull parts out of a date",
+ task:"For every shipment, in table order: in H5 return the month number of its date, and in I5 the short day name (Mon, Tue, …).",
+ inputs:["H5","I5"], heads:["Month","Day"], tryf:"MONTH, TEXT",
+ sol:[["H5","=MONTH(Shipments[Date])"],["I5",`=TEXT(Shipments[Date],"ddd")`]],
+ h:["MONTH(date) returns 1 to 12. Give it the whole Shipments[Date] column and it spills.","TEXT(date, \"ddd\") gives Mon, Tue… and \"dddd\" gives the full name."],
+ w:"Dates in Excel are numbers counted from 1 Jan 1900. MONTH, YEAR and DAY read parts of that number; TEXT turns it into whatever label you need.",
+ m:"Using TEXT for numbers you'll calculate with. TEXT returns text, so use MONTH when you need to sum or compare."},
+c6:{group:"Core formulas", kind:"sheet", title:"Days between two dates",
+ task:"How many days are there between the first and the last shipment in the table?",
+ inputs:["H5"], heads:["Days"], tryf:"MAX, MIN, DAYS",
+ sol:[["H5","=MAX(Shipments[Date])-MIN(Shipments[Date])"]],
+ alt:[["H5","=DAYS(MAX(Shipments[Date]),MIN(Shipments[Date]))"]],
+ h:["The first shipment is the smallest date: MIN. The last is the largest: MAX.","Dates are numbers, so you can subtract them. DAYS(end, start) does the same."],
+ w:"Subtracting two dates gives the number of days between them, because each date is a day count.",
+ m:"In real Excel the answer cell can pick up a date format and show something like 06 Apr 1900. Change it to General or Number with the ribbon."},
+c7:{group:"Core formulas", kind:"sheet", title:"Payment terms with EOMONTH and NETWORKDAYS",
+ task:"Invoices are due at the end of the month after shipping. In H5 return each shipment's due date. In I5 return the working days (Mon–Fri) from shipping to the due date.",
+ inputs:["H5","I5"], heads:["Due date","Working days"], tryf:"EOMONTH, NETWORKDAYS, #",
+ sol:[["H5","=EOMONTH(Shipments[Date],1)"],["I5","=NETWORKDAYS(Shipments[Date],H5#)"]],
+ h:["EOMONTH(date, 1) is the last day of next month.","NETWORKDAYS(start, end) counts Monday to Friday, including both dates. Use H5# for the ends."],
+ w:"\"End of next month\" terms are common in debtors reports. NETWORKDAYS turns calendar time into working time, which is what collections teams plan with.",
+ m:"Using EOMONTH(date, 0). That's the end of the same month, not the next one."},
+c8:{group:"Core formulas", kind:"sheet", title:"Count by weekday with WEEKDAY",
+ task:"How many shipments went out on a Monday?",
+ inputs:["H5"], heads:["Monday shipments"], tryf:"WEEKDAY, SUM, --",
+ sol:[["H5","=SUM(--(WEEKDAY(Shipments[Date],2)=1))"]],
+ alt:[["H5","=ROWS(FILTER(Shipments[ID],WEEKDAY(Shipments[Date],2)=1))"]],
+ h:["WEEKDAY(date, 2) numbers the days Monday = 1 to Sunday = 7.","Compare with =1 to get TRUE/FALSE per row. -- turns them into 1s and 0s, then SUM counts them."],
+ w:"COUNTIFS can't test a calculated value like the weekday, but an array test can. -- (double minus) converts TRUE/FALSE to 1/0 so they add up.",
+ m:"Leaving out the 2. The default numbering starts with Sunday = 1, so =1 would count Sundays."},
+c9:{group:"Core formulas", kind:"sheet", title:"Follow-up dates with WORKDAY",
+ task:"Sales follows up with the client 5 working days after each shipment. Return the follow-up date for every shipment, in table order.",
+ inputs:["H5"], heads:["Follow-up date"], tryf:"WORKDAY",
+ sol:[["H5","=WORKDAY(Shipments[Date],5)"]],
+ h:["WORKDAY(start_date, days) skips Saturdays and Sundays.","Give it the whole date column so it spills."],
+ w:"WORKDAY moves forward by working days only, and its third argument can list public holidays to skip as well.",
+ m:"Adding 5 to the date. That lands on weekends whenever a shipment goes out on Monday to Friday after the start of the week."},
 // ---------- Tables & names ----------
 t1:{group:"Tables & names", kind:"calc", table:"Shipments", colName:"Rand per kg", title:"A calculated column with [@Column]",
  task:"Add a calculated column called \"Rand per kg\" to the Shipments table: revenue divided by weight for that row, rounded to 2 decimals.",
@@ -1527,7 +1595,7 @@ v6:{group:"VBA & automation", kind:"vba", title:"Run code when the file opens",
 
 // display order
 const ORDER = [
- ["Core formulas", ["c1","c2","c3","c4"]],
+ ["Core formulas", ["c1","c2","c3","c4","c5","c6","c7","c8","c9"]],
  ["Spill basics", ["s1","s2","s3","s4"]],
  ["Filter & sort", ["s5","s6","s7","s8","s9"]],
  ["Summaries", ["s10","s11"]],
@@ -1690,7 +1758,7 @@ function colKind(e, col){
   if (e.cross) return col>=9?"money":null;
   const h=(e.heads||[])[col-8]||"";
   if (/share|%/i.test(h)) return "pct";
-  if (/month start|^date/i.test(h)) return "date";
+  if (/month start|date$|^date/i.test(h)) return "date";
   if (/per kg/i.test(h)) return "2dp";
   if (/\(R\)|revenue|vat/i.test(h)) return "money";
   return null;
@@ -1853,7 +1921,7 @@ function sheetBody(e){
     ${nm}
     <div class="fbars" ${VIEW.fbar?"":"hidden"}>${formulas(e).map(x=>`<div class="fwrap"><div class="fbar ${x.cell===activeCell?"on":""}" data-cell="${x.cell}"><span class="name">${x.cell}</span><span class="fx">fx</span>
       <div class="fcell"><textarea id="in-${x.cell}" data-cell="${x.cell}" rows="1" placeholder="=" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Formula in ${x.cell}">${esc(x.f)}</textarea><div class="fview" id="fv-${x.cell}" data-cell="${x.cell}" hidden></div></div></div></div>`).join("")}</div>
-    <div class="chips"><span class="lbl">Insert</span>${COLS_INS.map(c=>`<button class="chip" data-ins="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+    <div class="tblnote"><b>Use the tables.</b> Refer to data as <code>Shipments[Column]</code> or <code>Clients[Column]</code>, never cell ranges like <code>Data!G2:G31</code>. Type <code>Shipments[</code> and pick a column from the list.</div>
     <div class="runrow"><button class="btn" id="run">Run and check</button><button class="btn quiet" id="clear">Clear</button><span class="kbd">Enter runs · Alt+Enter new line · Tab accepts a suggestion · type straight into the yellow cell</span></div>
     <div id="status"></div>
     ${ribbonHTML(e)}
@@ -1920,6 +1988,9 @@ function closeCellEditor(){ const b=document.getElementById("celled"); if (b) b.
 let lastDiffs=[];
 function sheetRun(e,user){
   let nameErr=null;
+  const rangeUse=formulas(e).find(x=>/(^|[^\w'])(Data!|'Data'!)/i.test(x.f)||/(^|[^\w\]#$])\$?[A-G]\$?\d{1,3}(:\$?[A-L]\$?\d{1,3})(?![\w#(])/i.test(x.f.replace(/"[^"]*"/g,'""')));
+  if (rangeUse){ XL.setNames(e.names?userNames(e):[]); const r0=XL.runSheet(formulas(e)); lastRun=r0; lastRunF={}; formulas(e).forEach(x=>lastRunF[x.cell]=x.f); lastDiffs=[]; renderSheet(e,r0,[]); e.inputs.forEach(c=>showView(e,c,document.activeElement!==document.getElementById("in-"+c)));
+    return setStatus({state:"no",title:`${rangeUse.cell} uses cell ranges. Use the tables instead.`,msg:"Write Shipments[Revenue (R)] rather than Data!G2:G31. Table references grow with the data and say what they mean; graders and employers look for them."}); }
   if (e.names){ const errs=XL.setNames(userNames(e)); const k=Object.keys(errs)[0]; if (k) nameErr={state:"no",title:`Name Manager: ${k}`,msg:errs[k]}; } else XL.setNames([]);
   const r=XL.runSheet(formulas(e)); lastRun=r; lastRunF={}; formulas(e).forEach(x=>lastRunF[x.cell]=x.f);
   let res=nameErr||checkSheet(e,r);
@@ -2045,7 +2116,7 @@ const FCAT={
   "Statistical":["COUNT","COUNTA","COUNTIF","COUNTIFS","AVERAGE","AVERAGEIF","AVERAGEIFS","MAX","MAXIFS","MIN","MINIFS"],
   "Logical":["IF","IFS","IFERROR","IFNA","AND","OR","NOT","LET","LAMBDA","MAP","BYROW","BYCOL","REDUCE"],
   "Text":["TEXT","TEXTJOIN","CONCAT","LEFT","RIGHT","MID","LEN","TRIM","UPPER","LOWER","PROPER","VALUE"],
-  "Date & Time":["DATE","YEAR","MONTH","DAY","EOMONTH"],
+  "Date & Time":["DATE","DATEVALUE","TODAY","YEAR","MONTH","DAY","WEEKDAY","ISOWEEKNUM","EOMONTH","EDATE","DAYS","DATEDIF","NETWORKDAYS","WORKDAY"],
   "Information":["ISNUMBER","ISTEXT","ISBLANK","ISERROR"]
 };
 const sty=e=>{ const s=(saved.style=saved.style||{}); return s[e.id]=s[e.id]||{cells:{},cf:[],chart:null}; };
@@ -2328,7 +2399,7 @@ function calcBody(e){
   return `<div class="meta"><span>Table <b>${esc(e.table)}</b></span><span>New column <b>${esc(e.colName)}</b></span></div>
     <div class="chips"><span class="lbl">Try using</span>${e.tryf.split(/,\s*/).map(t=>`<span class="chip">${esc(t)}</span>`).join("")}</div>
     <div class="fbars"><div class="fwrap"><div class="fbar on"><span class="name">${esc(e.colName)}</span><span class="fx">fx</span><input id="in-calc" value="${esc(saved.calc[e.id]||"")}" placeholder="=" spellcheck="false" autocomplete="off" aria-label="Calculated column formula"></div></div></div>
-    <div class="chips"><span class="lbl">Insert</span>${["[@[Revenue (R)]]","[@[Weight (kg)]]","[@Branch]","[@Service]"].map(c=>`<button class="chip" data-ins="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+    <div class="tblnote"><b>Use the table.</b> In a calculated column, <code>[@Column]</code> means this row's value. Type <code>[@</code> and pick a column from the list.</div>
     <div class="runrow"><button class="btn" id="run">Run and check</button><button class="btn quiet" id="clear">Clear</button><span class="kbd">Enter fills the column</span></div>
     <div id="status"></div><div class="gridwrap tall" id="sheet"></div>`;
 }
@@ -2446,7 +2517,7 @@ function daxBody(e){ const m=saved.dax[e.id]||{name:"",expr:""};
   return `<div class="meta"><span>Rows <b>${esc(e.rows.table)}[${esc(e.rows.col)}]</b></span><span>Relationship <b>Shipments[Client] ∞→1 Clients[Client]</b></span></div>
     ${e.existing.length?`<div class="measures"><h3>Existing measures</h3>${e.existing.map(x=>`<span>${esc(x.name)} = ${esc(x.expr)}</span>`).join("")}</div>`:""}
     <div class="fbars"><div class="fwrap"><div class="fbar on"><input class="short" id="dx-name" value="${esc(m.name)}" placeholder="Measure name" spellcheck="false" autocomplete="off" aria-label="Measure name"><span class="fx">=</span><input id="dx-expr" value="${esc(m.expr)}" placeholder="DAX expression" spellcheck="false" autocomplete="off" aria-label="DAX expression"></div></div></div>
-    <div class="chips"><span class="lbl">Insert</span>${["Shipments[Revenue (R)]","Shipments[Service]","Shipments[Weight (kg)]","Clients[Tier]","[Total Revenue]","Shipments"].filter(x=>x!=="[Total Revenue]"||e.existing.length).map(c=>`<button class="chip" data-ins="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+    <div class="tblnote"><b>Use the model's tables.</b> Columns are <code>Shipments[Column]</code> or <code>Clients[Column]</code>; measures are <code>[Measure name]</code>. Type <code>[</code> or <code>Shipments[</code> to pick from the list.</div>
     <div class="runrow"><button class="btn" id="run">Run and check</button><button class="btn quiet" id="clear">Clear</button><span class="kbd">Type [ for measures · Table[ for columns</span></div>
     <div id="status"></div><div id="pivot"></div>`; }
 function daxInit(e){
