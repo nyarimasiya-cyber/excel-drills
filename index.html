@@ -201,6 +201,8 @@ details.data .tables{display:flex;flex-direction:column;gap:16px;margin-top:14px
 .hovertip b.bad{color:#ff9d8f}
 .hovertip span{opacity:.9;line-height:1.4}
 [hidden]{display:none!important}
+table.pq td.tblc{color:var(--accent);font-weight:600;font-style:italic;cursor:help}
+
 .exhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .item.noteit .no{font-weight:700;color:var(--accent)}
 .item.noteit span:last-child{color:var(--accent);font-weight:500}
@@ -821,14 +823,16 @@ function buildWB(META, XL){
 const PQ = (() => {
 const ERR = msg => ({pqErr:msg});
 const isErr = v => v && typeof v==="object" && "pqErr" in v;
+const isTbl = v => v && typeof v==="object" && "pqTable" in v;
 const blank = v => v===null || v===undefined || v==="";
 const mcol = c => /^[A-Za-z_][A-Za-z0-9_]*$/.test(c) ? `[${c}]` : `[#"${c}"]`;
 const mstr = s => `"${String(s).replace(/"/g,'""')}"`;
 const mlist = cs => `{${cs.map(mstr).join(", ")}}`;
 const clone = t => ({cols:t.cols.slice(), types:t.types.slice(), rows:t.rows.map(r=>r.slice())});
+const cloneT = t => ({cols:t.cols.slice(), types:t.types.slice(), rows:t.rows.map(r=>r.slice())});
 function colIx(t, c){ const k=t.cols.indexOf(c); if (k<0) throw new Error(`Expression.Error: The column '${c}' of the table wasn't found.`); return k; }
 const TYPE_M = {text:"type text", int:"Int64.Type", num:"type number", date:"type date", any:"type any"};
-const TYPE_L = {text:"Text", int:"Whole number", num:"Decimal number", date:"Date", any:"Any"};
+const TYPE_L = {text:"Text", int:"Whole number", num:"Decimal number", date:"Date", any:"Any", logical:"True/False", table:"Table"};
 function conv(v, t){
   if (v===null||v===undefined) return null;
   if (isErr(v)) return v;
@@ -909,20 +913,60 @@ const OPS = {
   sort:{ label:"Sort", name:"Sorted Rows", params:[{k:"col",type:"col",label:"Column"},{k:"dir",type:"select",label:"Order",options:["Ascending","Descending"]}],
     apply:(t,p)=>{ const k=colIx(t,p.col); const d=p.dir==="Descending"?-1:1; const o=clone(t); o.rows=o.rows.map((r,i)=>[r,i]).sort((a,b)=>cmpv(a[0][k],b[0][k])*d||a[1]-b[1]).map(x=>x[0]); return o; },
     m:(prev,p)=>`Table.Sort(${prev}, {{${mstr(p.col)}, Order.${p.dir==="Descending"?"Descending":"Ascending"}}})` },
-  merge:{ label:"Merge queries", name:"Merged Queries", params:[{k:"col",type:"col",label:"Match column (this query)"},{k:"with",type:"query",label:"Merge with"},{k:"key",type:"qcol",label:"Match column (other query)"},{k:"expand",type:"qcols",label:"Columns to bring in"},{k:"prefix",type:"check",label:"Use original column name as prefix",def:true}],
+  merge:{ label:"Merge queries", name:"Merged Queries", params:[{k:"col",type:"col",label:"Match column (this query)"},{k:"with",type:"query",label:"Merge with"},{k:"key",type:"qcol",label:"Match column (other query)"},{k:"join",type:"select",label:"Join kind",options:["Left outer (all from first, matching from second)","Inner (only matching rows)","Left anti (rows only in first)","Right anti (rows only in second)","Full outer (all rows from both)","Right outer (all from second, matching from first)"]},{k:"expand",type:"qcols",label:"Columns to bring in (not needed for anti joins)"},{k:"prefix",type:"check",label:"Use original column name as prefix",def:true}],
     apply:(t,p,Q)=>{ const k=colIx(t,p.col); const o2=Q[p.with]; if (!o2) throw new Error("Choose a query to merge with."); const k2=colIx(o2,p.key);
-      if (!p.expand?.length) throw new Error("Tick the columns to bring in from the other query."); const ex=p.expand.map(c=>colIx(o2,c));
-      const names=p.expand.map(c=>p.prefix?`${p.with}.${c}`:c); names.forEach(n=>{ if (t.cols.includes(n)) throw new Error(`Expression.Error: The field '${n}' already exists. Tick "Use original column name as prefix" or rename first.`); });
-      const rows=[]; t.rows.forEach(r=>{ const ms=o2.rows.filter(r2=>eqv(r2[k2],r[k])); if (!ms.length) rows.push([...r,...ex.map(()=>null)]); else ms.forEach(m=>rows.push([...r,...ex.map(i=>m[i])])); });
+      const J=(p.join||"Left outer").split(" (")[0]; const anti=J.endsWith("anti");
+      const expand=p.expand||[]; if (!expand.length && !anti) throw new Error("Tick the columns to bring in from the other query.");
+      const ex=expand.map(c=>colIx(o2,c));
+      const names=expand.map(c=>p.prefix?`${p.with}.${c}`:c); names.forEach(n=>{ if (t.cols.includes(n)) throw new Error(`Expression.Error: The field '${n}' already exists. Tick "Use original column name as prefix" or rename first.`); });
+      const rows=[], used=new Set(); const nullL=t.cols.map(()=>null), nullR=ex.map(()=>null);
+      const leftKeep = J==="Left outer"||J==="Full outer"||J==="Inner"||J==="Left anti"||J==="Right outer";
+      t.rows.forEach(r=>{ const ms=[]; o2.rows.forEach((r2,i2)=>{ if (r[k]!==null&&r[k]!==undefined&&String(r2[k2])===String(r[k])){ ms.push(i2); } });
+        ms.forEach(i2=>used.add(i2));
+        if (J==="Left anti"){ if (!ms.length) rows.push([...r,...nullR]); return; }
+        if (J==="Right anti") return;
+        if (!ms.length){ if (J==="Left outer"||J==="Full outer") rows.push([...r,...nullR]); return; }
+        ms.forEach(i2=>rows.push([...r,...ex.map(x=>o2.rows[i2][x])])); });
+      if (J==="Right anti"||J==="Full outer"||J==="Right outer") o2.rows.forEach((r2,i2)=>{ if (!used.has(i2)) rows.push([...nullL,...ex.map(x=>r2[x])]); });
+      if (J==="Right outer"){ /* keep matched (already added) + unmatched right; drop unmatched left (never added) */ }
       return {cols:[...t.cols,...names], types:[...t.types,...ex.map(i=>o2.types[i])], rows}; },
-    m:(prev,p)=>`Table.NestedJoin(${prev}, {${mstr(p.col)}}, ${p.with}, {${mstr(p.key)}}, "${p.with}", JoinKind.LeftOuter)\n    #"Expanded ${p.with}" = Table.ExpandTableColumn(…, "${p.with}", ${mlist(p.expand||[])}, ${mlist((p.expand||[]).map(c=>p.prefix?`${p.with}.${c}`:c))})` },
+    next:(p,ref)=>(p.expand||[]).length?`#"Expanded ${p.with}"`:ref,
+    m:(prev,p,nm)=>{ const J=(p.join||"Left outer").split(" (")[0]; const jk={"Left outer":"LeftOuter","Inner":"Inner","Left anti":"LeftAnti","Right anti":"RightAnti","Full outer":"FullOuter","Right outer":"RightOuter"}[J];
+      const ex=p.expand||[]; return `Table.NestedJoin(${prev}, {${mstr(p.col)}}, ${p.with}, {${mstr(p.key)}}, "${p.with}", JoinKind.${jk})`+(ex.length?`,\n    #"Expanded ${p.with}" = Table.ExpandTableColumn(#"${nm}", "${p.with}", ${mlist(ex)}, ${mlist(ex.map(c=>p.prefix?`${p.with}.${c}`:c))})`:``); } },
+  navigate:{ label:"Navigate to an item (Sheet / Table)", name:"Navigation", params:[{k:"item",type:"navrow",label:"Item to open"}],
+    apply:(t,p)=>{ const ni=t.cols.indexOf("Name"), ki=t.cols.indexOf("Kind"), di=t.cols.indexOf("Data"), ii=t.cols.indexOf("Item");
+      if (di<0||ki<0) throw new Error("Expression.Error: There's no Data/Kind column here. Navigate works on the list a workbook or folder source returns.");
+      if (!p.item) throw new Error("Choose the item to open."); const [item,kind]=p.item.split("|");
+      const row=t.rows.find(r=>String(r[ii>=0?ii:ni])===item&&r[ki]===kind); if (!row) throw new Error(`Expression.Error: The key didn't match any rows in the table. (No ${kind} called "${item}".)`);
+      return cloneT(row[di].pqTable); },
+    m:(prev,p)=>{ const [item,kind]=(p.item||"|").split("|"); return `${prev}{[Item="${item}",Kind="${kind}"]}[Data]`; } },
+  expand:{ label:"Expand a table column", name:"Expanded Data", params:[{k:"col",type:"tblcol",label:"Column holding tables"},{k:"cols",type:"ncols",label:"Columns to expand"},{k:"prefix",type:"check",label:"Use original column name as prefix",def:true}],
+    apply:(t,p)=>{ const k=colIx(t,p.col); if (!t.rows.some(r=>isTbl(r[k]))) throw new Error(`Expression.Error: Column '${p.col}' doesn't contain tables, so there's nothing to expand.`);
+      const want=p.cols||[]; if (!want.length) throw new Error("Tick the columns to bring out of the nested tables.");
+      const names=want.map(c=>p.prefix?`${p.col}.${c}`:c); const keep=t.cols.map((_,i)=>i).filter(i=>i!==k);
+      names.forEach(n=>{ if (keep.some(i=>t.cols[i]===n)) throw new Error(`Expression.Error: The field '${n}' already exists. Tick "Use original column name as prefix" or remove the old column.`); });
+      const rows=[]; let types=want.map(()=> "any");
+      t.rows.forEach(r=>{ const nt=isTbl(r[k])?r[k].pqTable:null; if (!nt||!nt.rows.length){ rows.push([...keep.map(i=>r[i]),...want.map(()=>null)]); return; }
+        const ix=want.map(c=>nt.cols.indexOf(c)); types=types.map((ty,j)=>ix[j]>=0&&ty==="any"?nt.types[ix[j]]:ty);
+        nt.rows.forEach(nr=>rows.push([...keep.map(i=>r[i]),...ix.map(x=>x<0?null:nr[x])])); });
+      return {cols:[...keep.map(i=>t.cols[i]),...names], types:[...keep.map(i=>t.types[i]),...types], rows}; },
+    m:(prev,p)=>`Table.ExpandTableColumn(${prev}, ${mstr(p.col)}, ${mlist(p.cols||[])}, ${mlist((p.cols||[]).map(c=>p.prefix?`${p.col}.${c}`:c))})` },
+  addcol:{ label:"Add column (calculate from two columns)", name:"Added Custom", params:[{k:"name",type:"text",label:"New column name"},{k:"a",type:"col",label:"First column"},{k:"op",type:"select",label:"Operation",options:["−  subtract","+  add","×  multiply","÷  divide","=  equals","≠  does not equal"]},{k:"b",type:"col",label:"Second column"}],
+    apply:(t,p)=>{ const name=(p.name||"").trim(); if (!name) throw new Error("Enter a name for the new column."); if (t.cols.includes(name)) throw new Error(`Expression.Error: The field '${name}' already exists.`);
+      const a=colIx(t,p.a), b=colIx(t,p.b); const op=(p.op||"−").trim()[0];
+      const f=(x,y)=>{ if (isErr(x)) return x; if (isErr(y)) return y; if (op==="="||op==="≠"){ const e=eqv(x,y); return op==="="?e:!e; }
+        if (x===null||y===null||x===undefined||y===undefined) return null;
+        if (typeof x!=="number"||typeof y!=="number") return ERR(`Expression.Error: We cannot apply operator ${op} to types Text and Number. Change '${typeof x!=="number"?t.cols[a]:t.cols[b]}' to a number type first.`);
+        return op==="−"?x-y : op==="+"?x+y : op==="×"?x*y : (y===0?null:x/y); };
+      const o=clone(t); o.rows.forEach(r=>r.push(f(r[a],r[b]))); o.cols.push(name); o.types.push(op==="="||op==="≠"?"logical":"num"); return o; },
+    m:(prev,p)=>{ const op=(p.op||"−").trim()[0]; const mo={"−":"-","+":"+","×":"*","÷":"/","=":"=","≠":"<>"}[op]; return `Table.AddColumn(${prev}, ${mstr(p.name||"Custom")}, each ${mcol(p.a)} ${mo} ${mcol(p.b)}, ${op==="="||op==="≠"?"type logical":"type number"})`; } },
   append:{ label:"Append queries", name:"Appended Query", params:[{k:"with",type:"query",label:"Append"}],
     apply:(t,p,Q)=>{ const o2=Q[p.with]; if (!o2) throw new Error("Choose a query to append."); const cols=[...t.cols]; o2.cols.forEach(c=>{ if (!cols.includes(c)) cols.push(c); });
       const pick=(tb,r)=>cols.map(c=>{ const i=tb.cols.indexOf(c); return i<0?null:r[i]; });
       return {cols, types:cols.map(c=>{ const i=t.cols.indexOf(c); return i<0?o2.types[o2.cols.indexOf(c)]:t.types[i]; }), rows:[...t.rows.map(r=>pick(t,r)),...o2.rows.map(r=>pick(o2,r))]}; },
     m:(prev,p)=>`Table.Combine({${prev}, ${p.with}})` }
 };
-const ORDER=["skip","promote","removeBlank","removeCols","keepCols","filter","trim","proper","upper","type","replace","unpivotOther","rename","group","sort","merge","append"];
+const ORDER=["navigate","expand","skip","promote","removeBlank","removeCols","keepCols","filter","trim","proper","upper","type","replace","unpivotOther","rename","group","sort","addcol","merge","append"];
 
 function run(source, steps, Q){
   const out=[{name:"Source", table:clone(source), code:null}]; const used={};
@@ -930,22 +974,26 @@ function run(source, steps, Q){
   steps.forEach((s,i)=>{
     const op=OPS[s.op]; let nm=op.name; used[nm]=(used[nm]||0)+1; if (used[nm]>1) nm+=` ${used[nm]-1}`;
     const ref=`#"${nm}"`; let code;
-    try { code=op.m(prev,s.p||{}); } catch(e){ code="…"; }
+    try { code=op.m(prev,s.p||{},nm); } catch(e){ code="…"; }
     if (error){ out.push({name:nm, table:null, code, error}); return; }
     try { t=op.apply(t, s.p||{}, Q); out.push({name:nm, table:t, code}); }
     catch(e){ error=e.message; out.push({name:nm, table:null, code, error:e.message}); }
-    prev=ref;
+    prev=op.next?op.next(s.p||{},ref):ref;
   });
   return out;
 }
 function mScript(qname, srcExpr, results){
-  const ln=[`let`, `    Source = ${srcExpr}`];
+  const [expr, cmt]=String(srcExpr).split(/\s*\/\/\s*/);
+  const ln=[`let`, `    Source = ${expr}`];
   results.slice(1).forEach(r=>ln.push(`    #"${r.name}" = ${r.code}`));
   for (let i=1;i<ln.length-1;i++) ln[i]+=",";
-  ln.push(`in`, `    ${results.length>1?`#"${results[results.length-1].name}"`:"Source"}`);
+  if (cmt) ln[1]+=`  // ${cmt}`;
+  let lastRef="Source";
+  if (results.length>1){ const r=results[results.length-1]; const m=r.code&&r.code.match(/\n\s*(#"[^"]+") = [^\n]*$/); lastRef=m?m[1]:`#"${r.name}"`; }
+  ln.push(`in`, `    ${lastRef}`);
   return ln.join("\n");
 }
-function compare(got, exp){
+function compare(got, exp, checkTypes){
   if (!got) return {ok:false, title:"A step has an error.", msg:"Fix or delete the step with the warning sign, then the preview comes back."};
   const miss=exp.cols.filter(c=>!got.cols.includes(c)), extra=got.cols.filter(c=>!exp.cols.includes(c));
   if (miss.length||extra.length) return {ok:false, title:"The columns don't match the target yet.", msg:`${miss.length?`Missing: ${miss.join(", ")}. `:""}${extra.length?`Not wanted: ${extra.join(", ")}.`:""}`};
@@ -956,11 +1004,13 @@ function compare(got, exp){
     if (isErr(a)) return {ok:false, title:`Row ${i+1}, ${exp.cols[j]} shows Error.`, msg:a.pqErr};
     if (typeof b==="number" && typeof a==="string") return {ok:false, title:`${exp.cols[j]} still holds text.`, msg:`Values like "${a}" need to be numbers. Use Change type.`};
     const same = typeof a==="number"&&typeof b==="number" ? Math.abs(a-b)<1e-6 : a===b;
+    if (isTbl(b)&&isTbl(a)) continue;
     if (!same) return {ok:false, title:`Row ${i+1}, ${exp.cols[j]}: you have "${a??"null"}", the target has "${b??"null"}".`, msg:"Check text cleanup, sort order and filters."};
   }
+  if (checkTypes){ for (let j=0;j<exp.cols.length;j++){ const te=exp.types[j]; if (te==="any"||!te) continue; if (got.types[j]!==te) return {ok:false, title:`${exp.cols[j]} has the wrong data type.`, msg:`It should be ${TYPE_L[te]||te}. Use Change type on that column.`}; } }
   return {ok:true};
 }
-return { OPS, ORDER, run, mScript, compare, isErr, TYPE_L };
+return { OPS, ORDER, run, mScript, compare, isErr, isTbl, TYPE_L };
 })();
 
 
@@ -1512,6 +1562,36 @@ p5:{group:"Power Query", kind:"pq", source:"JanFile", title:"Append monthly file
  w:"Append is how monthly files become one dataset. With a folder query, Power Query does this for every file in the folder at once.",
  m:"Changing types before appending. It works, but you'd have to repeat it for every file; do it once after the append."},
 
+p6:{group:"Power Query", kind:"pq", source:"RateCard", title:"Sheet or Table? The navigation list", checkTypes:true,
+ task:"Connecting to JHB_RateCard.xlsx gives a list of everything inside the file: Name, Data, Item, Kind, Hidden. Open the Excel Table of rates (not the sheet), then make Rate a decimal number.",
+ steps:[{op:"navigate",p:{item:"tblRates|Table"}},{op:"type",p:{cols:["Rate"],to:"Decimal number"}}],
+ h:["Read the Kind column. Sheet = the whole grid, title rows and all. Table = an Excel Table: headers and data only. DefinedName = a named range.","Add step → Navigate to an item → tblRates (Table). Then Change type on Rate."],
+ w:"Tables are the safest thing to connect to: they have real headers, contain only data rows, and keep working when someone adds rows or types a title above them. In M the navigation step is Source{[Item=\"tblRates\",Kind=\"Table\"]}[Data].",
+ m:"Opening the Rates sheet instead. You get Column1, Column2… plus the title rows, which need Remove top rows and Promote headers, and the query breaks if someone inserts a line at the top."},
+p7:{group:"Power Query", kind:"pq", source:"RateBook", title:"Every table in a workbook: filter by Kind",
+ task:"RateBook_2026.xlsx has a sheet and an Excel Table for each month, plus a print area. Combine every month's Table into one list. Target columns: Name, Lane, Rate.",
+ steps:[{op:"filter",p:{col:"Kind",op:"equals",val:"Table"}},{op:"keepCols",p:{cols:["Name","Data"]}},{op:"expand",p:{col:"Data",cols:["Lane","Rate"],prefix:false}}],
+ h:["Filter the Kind column to keep only Table rows. That drops the sheets and the named range.","Keep Name and Data (Remove other columns), then Expand the Data column: tick Lane and Rate and untick the prefix option."],
+ w:"List → filter → expand is the pattern behind every \"combine\" in Power Query, including folder queries. When next month's table is added to the workbook, Refresh picks it up with no changes.",
+ m:"Expanding without filtering Kind first. Each month then appears twice (the sheet and the table), with title rows mixed in."},
+p8:{group:"Power Query", kind:"pq", source:"CPT_Csv", title:"A second source: the CPT CSV", checkTypes:true,
+ task:"The Cape Town branch sends its rates as a CSV on a network share. Clean it so it matches the JHB table: headers Lane, Service, Rate, with Rate as a decimal number.",
+ steps:[{op:"promote",p:{}},{op:"type",p:{cols:["Rate"],to:"Decimal number"}}],
+ h:["A CSV has no sheets, tables or Kind column: it's just rows of text, and the first row holds the headers.","Use first row as headers, then Change type on Rate to Decimal number."],
+ w:"Each source needs its own first steps, but once both are cleaned they have the same columns and types. That's what makes comparing them possible.",
+ m:"Comparing before fixing types. The text \"8.20\" never equals the number 8.2, so every rate would look different."},
+p9:{group:"Power Query", kind:"pq", source:"JHB_Rates", others:["CPT_Rates"], title:"Compare two files: lanes missing in CPT",
+ task:"JHB_Rates (from the Excel file) and CPT_Rates (from the CSV) should list the same lanes. Return the JHB rows whose Lane doesn't appear in the CPT file at all.",
+ steps:[{op:"merge",p:{col:"Lane",with:"CPT_Rates",key:"Lane",join:"Left anti (rows only in first)",expand:[],prefix:true}}],
+ h:["This is a Merge on Lane, but the join kind does the work.","Left anti keeps rows from the first query that have no match in the second. You don't need to bring in any columns."],
+ w:"Anti joins are the reconciliation tool. Left anti = in the first file only; Right anti = in the second file only (here that would show CPT-GRJ, a lane only Cape Town has).",
+ m:"Using a Left outer join and scanning for blanks by eye. Also check the keys first: Power Query joins are case-sensitive, and \"jnb-dur\" or a trailing space won't match \"JNB-DUR\"."},
+p10:{group:"Power Query", kind:"pq", source:"JHB_Rates", others:["CPT_Rates"], title:"Compare two files: rates that changed",
+ task:"For lanes in BOTH files, find the ones where the CPT rate differs from the JHB rate. Target columns: Lane, Service, Rate, CPT_Rates.Rate, Difference (CPT minus JHB).",
+ steps:[{op:"merge",p:{col:"Lane",with:"CPT_Rates",key:"Lane",join:"Inner (only matching rows)",expand:["Rate"],prefix:true}},{op:"addcol",p:{name:"Difference",a:"CPT_Rates.Rate",op:"−  subtract",b:"Rate"}},{op:"filter",p:{col:"Difference",op:"does not equal",val:"0"}}],
+ h:["Merge on Lane with an Inner join (lanes in both files) and bring in CPT's Rate, keeping the prefix so it's clear which file it came from.","Add column: Difference = CPT_Rates.Rate − Rate. Then filter Difference does not equal 0."],
+ w:"Inner join + difference column + filter is the standard \"what changed\" check, used for price lists, stock counts and bank reconciliations alike.",
+ m:"Merging without the prefix, so two columns are both called Rate. Keep the prefix (or rename) so everyone can see which file each value came from."},
 // ---------- DAX ----------
 d1:{group:"Data model & DAX", kind:"dax", title:"Your first measure", rows:{table:"Shipments",col:"Branch"}, existing:[], fmt:"r",
  task:"Create a measure called Total Revenue that sums Shipments[Revenue (R)]. The pivot shows it by branch.",
@@ -1629,7 +1709,7 @@ const ORDER = [
  ["Lookups", ["s12","s13"]],
  ["Tables & names", ["t1","t2","t3"]],
  ["LET & LAMBDA", ["s14","s15","l1","l2","l3"]],
- ["Power Query", ["p1","p2","p3","p4","p5"]],
+ ["Power Query", ["p1","p2","p3","p4","p5","p6","p7","p8","p9","p10"]],
  ["Data model & DAX", ["d1","d2","d3","d4","d5","d6"]],
  ["VBA & automation", ["v1","v2","v3","v4","v5","v6"]]
 ];
@@ -1649,6 +1729,30 @@ const PQ_SRC_EXPR = {
  JanFile:'Csv.Document(File.Contents("C:\\Rates\\Jan.csv"), [Delimiter=",", Encoding=65001])',
  FebFile:'Csv.Document(File.Contents("C:\\Rates\\Feb.csv"), [Delimiter=",", Encoding=65001])'
 };
+
+const _T=(cols,rows,types)=>({pqTable:{cols,types:types||cols.map(()=>"any"),rows}});
+const _NAV=["Name","Data","Item","Kind","Hidden"], _NAVT=["text","table","text","text","logical"];
+const _JHB=[["JNB-CPT","Road",9.5],["JNB-DUR","Road",7.8],["JNB-PLZ","Road",8.9],["JNB-BFN","Road",6.4],["JNB-ELS","Road",9.1],["CPT-DUR","Express",16.2]];
+const _raw=(title,head,rows)=>_T(head.map((_,i)=>"Column"+(i+1)),[[title,...head.slice(1).map(()=>null)],head.map(()=>null),head,...rows]);
+PQ_SOURCES.RateCard={cols:_NAV,types:_NAVT,rows:[
+ ["Rates",_raw("JHB rate card - October 2026",["Lane","Service","Rate"],_JHB),"Rates","Sheet",false],
+ ["tblRates",_T(["Lane","Service","Rate"],_JHB),"tblRates","Table",false],
+ ["Lookups",_T(["Column1","Column2"],[["Service","Code"],["Road","R"],["Express","X"]]),"Lookups","Sheet",true],
+ ["Print_Area",_raw("JHB rate card - October 2026",["Lane","Service","Rate"],_JHB),"Rates!Print_Area","DefinedName",false]]};
+const _JAN=[["JNB-CPT",9.4],["JNB-DUR",7.7],["JNB-PLZ",8.8]], _FEB=[["JNB-CPT",9.5],["JNB-DUR",7.8],["JNB-PLZ",8.9],["JNB-BFN",6.4]];
+PQ_SOURCES.RateBook={cols:_NAV,types:_NAVT,rows:[
+ ["Jan",_raw("January rates",["Lane","Rate"],_JAN),"Jan","Sheet",false],
+ ["tblJan",_T(["Lane","Rate"],_JAN),"tblJan","Table",false],
+ ["Feb",_raw("February rates",["Lane","Rate"],_FEB),"Feb","Sheet",false],
+ ["tblFeb",_T(["Lane","Rate"],_FEB),"tblFeb","Table",false],
+ ["Print_Area",_raw("January rates",["Lane","Rate"],_JAN),"Jan!Print_Area","DefinedName",false]]};
+PQ_SOURCES.CPT_Csv={cols:["Column1","Column2","Column3"],types:["text","text","text"],rows:[["Lane","Service","Rate"],["JNB-CPT","Road","9.50"],["JNB-DUR","Road","8.20"],["JNB-PLZ","Road","8.90"],["JNB-ELS","Road","9.65"],["CPT-DUR","Express","16.20"],["CPT-GRJ","Road","7.30"]]};
+Object.assign(PQ_SRC_EXPR,{
+ RateCard:'Excel.Workbook(File.Contents("C:\\Rates\\JHB_RateCard.xlsx"), null, true)',
+ RateBook:'Excel.Workbook(File.Contents("C:\\Rates\\RateBook_2026.xlsx"), null, true)',
+ CPT_Csv:'Csv.Document(File.Contents("\\\\cpt-server\\shared\\CPT_Rates.csv"), [Delimiter=",", Encoding=65001])',
+ JHB_Rates:"RateCard  // the query from the Sheet-or-Table exercise",
+ CPT_Rates:"CPT_Csv  // the query from the CSV exercise"});
 
 
 // ===== Training notes, one lesson per topic =====
@@ -1789,12 +1893,37 @@ I6:  =SUMIFS(Shipments[Revenue (R)], Shipments[Branch], H6#, Shipments[Service],
   {h:"How it works", b:[
    {p:"Data → Get Data opens the Power Query editor. Each click becomes an Applied Step, recorded in the M language (View → Advanced Editor). Next month you drop in the new file and click Refresh All; every step runs again."},
    {list:["Source: where the data comes from (file, folder, table, database).","Transform: the steps.","Load: to a sheet, or Only Create Connection and add to the Data Model."]}]},
+  {h:"Where data comes from", b:[
+   {p:"The Source step says which connector to use. Each one returns something different."},
+   {tbl:[["Excel.Workbook(File.Contents(\"…xlsx\"))","Another Excel file. Returns the navigation list (below)"],["Excel.CurrentWorkbook()","Tables and named ranges in this workbook"],["Csv.Document(File.Contents(\"…csv\"))","A CSV or text file. Just rows of text, no sheets or tables"],["Folder.Files(\"C:\\Rates\")","Every file in a folder, one row per file"],["SharePoint.Files(…)","Files on SharePoint or OneDrive for Business"],["Sql.Database(server, db)","A database table or query"]]},
+   {tip:"A file on your C: drive and a file on a network share or SharePoint are just different paths in the Source step. Once both queries are cleaned, Power Query treats them the same."}]},
+  {h:"The navigation list: Name, Data, Item, Kind, Hidden", b:[
+   {p:"When you connect to an Excel file, the first thing Power Query returns is a list of everything inside it, one row per item:"},
+   {tbl:[["Name","The item's name, e.g. Rates or tblRates"],["Data","The item's contents, shown as Table. This is what you open"],["Item","The exact name used to find it (for named ranges, like Rates!Print_Area)"],["Kind","What type of item it is (see below)"],["Hidden","TRUE if the sheet is hidden"]]},
+   {p:"The Kind column is the important one:"},
+   {tbl:[["Sheet","The whole worksheet grid: titles, blank rows, everything. Columns come in as Column1, Column2…"],["Table","An Excel Table (Ctrl+T): real headers, data rows only, grows with the data"],["DefinedName","A named range, such as a print area"]]},
+   {code:`Source = Excel.Workbook(File.Contents("C:\\Rates\\JHB_RateCard.xlsx"), null, true),
+tblRates = Source{[Item="tblRates", Kind="Table"]}[Data]`},
+   {p:"Clicking Table next to an item in the Navigator writes that second line: find the row where Item and Kind match, then take its Data."},
+   {tip:"Choose Table over Sheet whenever the file has one. A Sheet connection breaks when someone adds a title row or moves the data; a Table doesn't."},
+   {warn:"\"The key didn't match any rows in the table\" means the item was renamed or deleted: a sheet called Rates became Rates Oct. Fix the name in the navigation step."}]},
+  {h:"Combining many items: filter by Kind, then expand", b:[
+   {p:"To stack every Table in a workbook (or every file in a folder), don't open them one by one. Work on the list itself:"},
+   {list:["Filter Kind = Table (drops sheets and named ranges, which would duplicate the data).","Keep Name and Data (Name tells you which item each row came from).","Expand the Data column and pick the columns to bring out."]},
+   {p:"Next month's table is picked up automatically on Refresh."}]},
+  {h:"Join kinds", b:[
+   {p:"Merge queries joins two tables on a matching column. The join kind decides which rows you get:"},
+   {tbl:[["Left outer","All rows from the first, plus matches from the second (the usual lookup)"],["Inner","Only rows found in both"],["Left anti","Rows in the first with no match in the second"],["Right anti","Rows in the second with no match in the first"],["Full outer","Every row from both, matched where possible"],["Right outer","All rows from the second, plus matches from the first"]]}]},
+  {h:"Comparing two files from different sources", b:[
+   {list:["Bring both into their own queries and clean them so the key and value columns have the same names and types.","Clean the key: Trim, fix case. Joins are case-sensitive, so jnb-dur doesn't match JNB-DUR.","Missing from file 2: Merge with Left anti.","New in file 2: Merge with Right anti.","Changed values: Merge with Inner, bring in file 2's value, Add column = new − old, filter where it isn't 0.","One reconciliation table: Full outer, then flag rows where either side is null or the values differ."]},
+   {tip:"Keep the prefix when you expand (e.g. CPT_Rates.Rate) so it's always clear which file each value came from."}]},
   {h:"Key transformations", b:[
    {tbl:[["Remove top rows, Use first row as headers","Fix report-style files"],["Trim, Capitalize Each Word, Replace values","Clean text"],["Change type","Make numbers and dates real numbers and dates"],["Filter rows","Drop totals, blanks and test rows"],["Unpivot other columns","Months across columns → rows"],["Group by","Summarise, like a pivot"],["Merge queries","Join columns from another table (a lookup)"],["Append queries","Stack tables with the same columns"]]}]},
   {h:"Unpivot OTHER columns", b:[
    {p:"Select the ID columns (e.g. Branch) and choose Unpivot Other Columns. Next quarter's new month columns are unpivoted automatically. Selecting Jan–Mar and choosing Unpivot Columns would ignore April."}]},
   {h:"Merge vs Append", b:[
-   {tbl:[["Merge","Adds columns from another table where a key matches, like XLOOKUP for a whole table"],["Append","Adds rows from tables with the same layout, like VSTACK"]]}]},
+   {tbl:[["Merge","Adds columns from another table where a key matches, like XLOOKUP for a whole table"],["Append","Adds rows from tables with the same layout, like VSTACK"]]},
+   {p:"Comparing files uses Merge (side by side, on a key). Combining monthly files uses Append (one under the other)."}]},
   {h:"Folder queries and errors", b:[
    {p:"Get Data → From Folder → Combine combines every file with the same layout in a folder: the standard way to handle monthly files."},
    {warn:"\"The column 'X' of the table wasn't found\" means a source header changed. Steps such as Changed Type store column names, so fix the header at the source or edit that step."}]}
@@ -2663,8 +2792,10 @@ const PQ_Q=(()=>{ const Q={...JSON.parse(JSON.stringify(PQ_SOURCES))};
   Q.Shipments={cols:WBI.shCols.slice(),types:["text","date","text","text","text","int","int"],rows:WBI.sh.map(r=>r.slice())};
   Q.Clients={cols:WBI.clCols.slice(),types:["text","text","text"],rows:WBI.cl.map(r=>r.slice())};
   const last=(src,steps)=>{ const r=PQ.run(Q[src],steps,Q); return r[r.length-1].table; };
-  Q.Q1Report=last("BranchReport",NEW.p1.steps); Q.Q1Clean=last("Q1Report",NEW.p2.steps); return Q; })();
+  Q.Q1Report=last("BranchReport",NEW.p1.steps); Q.Q1Clean=last("Q1Report",NEW.p2.steps);
+  Q.JHB_Rates=last("RateCard",NEW.p6.steps); Q.CPT_Rates=last("CPT_Csv",NEW.p8.steps); return Q; })();
 const pqSteps=e=>saved.pq[e.id]||[];
+function pqOthers(e){ return e.others || (e.id==="p4"?["Clients"]:e.id==="p5"?["FebFile"]:[]); }
 function pqTarget(e){ if (!expCache[e.id]){ const r=PQ.run(PQ_Q[e.source],e.steps,PQ_Q); expCache[e.id]=r[r.length-1].table; } return expCache[e.id]; }
 function stepLabel(s){ const o=PQ.OPS[s.op], p=s.p||{}; const bits=[];
   if (p.n!==undefined) bits.push(p.n); if (p.cols) bits.push(p.cols.join(", ")); if (p.col) bits.push(p.col); if (p.op) bits.push(p.op); if (p.val!==undefined&&s.op==="filter") bits.push(`"${p.val}"`);
@@ -2672,7 +2803,7 @@ function stepLabel(s){ const o=PQ.OPS[s.op], p=s.p||{}; const bits=[];
   if (p.with) bits.push(`with ${p.with}`); if (p.expand) bits.push(`bring in ${p.expand.join(", ")}`); if (p.find) bits.push(`"${p.find}" → "${p.rep??""}"`);
   return `${o.label}${bits.length?": "+bits.join(" · "):""}`; }
 function pqBody(e){
-  return `<div class="meta"><span>Source query <b>${esc(e.source)}</b></span><span>Other queries <b>${Object.keys(PQ_Q).filter(k=>k!==e.source&&(e.id==="p4"?k==="Clients":e.id==="p5"?k==="FebFile":false)).join(", ")||"none needed"}</b></span></div>
+  return `<div class="meta"><span>Source query <b>${esc(e.source)}</b></span><span>Other queries <b>${pqOthers(e).join(", ")||"none needed"}</b></span>${/File\.Contents/.test(PQ_SRC_EXPR[e.source]||"")?`<span>File <b>${esc((PQ_SRC_EXPR[e.source]||"").replace(/^.*File\.Contents\("([^"]+)".*$/,"$1"))}</b></span>`:""}</div>
     <div class="pqgrid">
       <div class="panel"><h3>Applied steps</h3><ul class="steps" id="steps"></ul>
         <div class="form" id="pqform"></div></div>
@@ -2694,19 +2825,21 @@ function pqRefresh(e,user){
   const fin=res[res.length-1].table, errStep=res.find(x=>x.error);
   if (!steps.length) setStatus({state:"info",title:"Add your first step below the Applied steps list.",msg:"The preview shows the result after the selected step. Compare it with the target table."});
   else if (errStep) setStatus({state:"no",title:`Step "${errStep.name}" has an error.`,msg:errStep.error});
-  else { const c=PQ.compare(fin,pqTarget(e)); if (c.ok) okStatus(markDone(e.id)&&user); else setStatus({state:"no",...c}); }
+  else { const c=PQ.compare(fin,pqTarget(e),e.checkTypes); if (c.ok) okStatus(markDone(e.id)&&user);
+    else { if (fin && fin.cols.some(x=>/^Column\d+$/.test(x)) && !pqTarget(e).cols.some(x=>/^Column\d+$/.test(x))) c.msg=(c.msg||"")+" Column1, Column2… means the headers aren't set: either you opened a Sheet instead of a Table, or the header row still needs promoting.";
+      setStatus({state:"no",...c}); } }
 }
-const TYI={text:"ABC",int:"123",num:"1.2",date:"Date",any:"ABC123"};
+const TYI={text:"ABC",int:"123",num:"1.2",date:"Date",any:"ABC123",table:"Table",logical:"T/F"};
 function pqTable(t,_){
   if (!t) return "";
   let h=`<table class="xl pq"><thead><tr><th></th>${t.cols.map((c,j)=>`<th class="h"><span class="ty">${TYI[t.types[j]]||"ABC123"}</span>${esc(c)}</th>`).join("")}</tr></thead><tbody>`;
-  t.rows.slice(0,60).forEach((r,i)=>{ h+=`<tr><th>${i+1}</th>${r.map((v,j)=>{ if (PQ.isErr(v)) return `<td class="err" title="${esc(v.pqErr)}">Error</td>`;
+  t.rows.slice(0,60).forEach((r,i)=>{ h+=`<tr><th>${i+1}</th>${r.map((v,j)=>{ if (PQ.isTbl(v)) return `<td class="tblc" title="Table: ${esc(v.pqTable.cols.join(", "))} (${v.pqTable.rows.length} rows)">Table</td>`; if (typeof v==="boolean") return `<td>${v?"TRUE":"FALSE"}</td>`; if (PQ.isErr(v)) return `<td class="err" title="${esc(v.pqErr)}">Error</td>`;
     if (v===null||v===undefined) return `<td class="null">null</td>`; const d=t.types[j]==="date"&&typeof v==="number"; return `<td class="${typeof v==="number"?"num":""}">${esc(d?fmtDate(v):typeof v==="number"?fmt(v):v)}</td>`; }).join("")}</tr>`; });
   return h+`</tbody></table>`;
 }
 function pqFormRender(e,res){
   const good=[...res].reverse().find(x=>x.table); const t=good.table; const op=PQ.OPS[pqForm.op]; const p=pqForm.p;
-  const otherQ=Object.keys(PQ_Q).filter(k=>k!==e.source);
+  const otherQ=pqOthers(e).length?pqOthers(e):Object.keys(PQ_Q).filter(k=>k!==e.source);
   let h=`<label>Add a step<select id="pq-op">${PQ.ORDER.map(k=>`<option value="${k}" ${k===pqForm.op?"selected":""}>${esc(PQ.OPS[k].label)}</option>`).join("")}</select></label>`;
   op.params.forEach(pr=>{
     if (pr.type==="number") h+=`<label>${pr.label}<input type="number" min="0" data-p="${pr.k}" value="${esc(p[pr.k]??"")}"></label>`;
@@ -2717,12 +2850,19 @@ function pqFormRender(e,res){
     if (pr.type==="query") h+=`<label>${pr.label}<select data-p="${pr.k}" data-re="1"><option value="">Choose…</option>${otherQ.map(q=>`<option ${p[pr.k]===q?"selected":""}>${esc(q)}</option>`).join("")}</select></label>`;
     if (pr.type==="qcol"&&p.with) h+=`<label>${pr.label}<select data-p="${pr.k}">${PQ_Q[p.with].cols.map(c=>`<option ${p[pr.k]===c?"selected":""}>${esc(c)}</option>`).join("")}</select></label>`;
     if (pr.type==="qcols"&&p.with) h+=`<label>${pr.label}<span class="checks">${PQ_Q[p.with].cols.map(c=>`<label><input type="checkbox" data-pc="${pr.k}" value="${esc(c)}" ${(p[pr.k]||[]).includes(c)?"checked":""}>${esc(c)}</label>`).join("")}</span></label>`;
+    if (pr.type==="navrow"){ const ni=t.cols.indexOf("Name"), ki=t.cols.indexOf("Kind"), ii=t.cols.indexOf("Item");
+      h+= ki<0 ? `<p class="small">This step needs the list a workbook source returns (Name, Data, Item, Kind).</p>`
+        : `<label>${pr.label}<select data-p="${pr.k}">${t.rows.map(r=>{ const it=r[ii>=0?ii:ni], v=`${it}|${r[ki]}`; return `<option value="${esc(v)}" ${p[pr.k]===v?"selected":""}>${esc(r[ni])} (${esc(r[ki])})${r[t.cols.indexOf("Hidden")]===true?" · hidden":""}</option>`; }).join("")}</select></label>`; }
+    if (pr.type==="tblcol"){ const tc=t.cols.filter((c,j)=>t.rows.some(r=>PQ.isTbl(r[j]))); if (!p[pr.k]&&tc.length) p[pr.k]=tc[0];
+      h+= tc.length ? `<label>${pr.label}<select data-p="${pr.k}" data-re="1">${tc.map(c=>`<option ${p[pr.k]===c?"selected":""}>${esc(c)}</option>`).join("")}</select></label>` : `<p class="small">No column here holds tables. Expand is used after a source or merge that returns nested tables.</p>`; }
+    if (pr.type==="ncols"){ const j=t.cols.indexOf(p.col); const cs=[]; if (j>=0) t.rows.forEach(r=>{ if (PQ.isTbl(r[j])) r[j].pqTable.cols.forEach(c=>{ if (!cs.includes(c)) cs.push(c); }); });
+      h+=`<label>${pr.label}<span class="checks">${cs.map(c=>`<label><input type="checkbox" data-pc="${pr.k}" value="${esc(c)}" ${(p[pr.k]||[]).includes(c)?"checked":""}>${esc(c)}</label>`).join("")||"<span class='small'>Choose the table column first</span>"}</span></label>`; }
     if (pr.type==="check") h+=`<label class="inline"><input type="checkbox" data-pk="${pr.k}" ${(p[pr.k]??pr.def)?"checked":""}>${pr.label}</label>`;
   });
   h+=`<button class="btn sm" id="pq-add">Add step</button>`;
   const f=document.getElementById("pqform"); f.innerHTML=h;
   document.getElementById("pq-op").onchange=ev=>{ pqForm={op:ev.target.value,p:{}}; pqFormRender(e,res); };
-  const read=()=>{ f.querySelectorAll("[data-p]").forEach(x=>{ p[x.dataset.p]=x.value; }); op.params.filter(x=>x.type==="cols"||x.type==="qcols").forEach(pr=>{ p[pr.k]=[...f.querySelectorAll(`[data-pc="${pr.k}"]:checked`)].map(x=>x.value); }); f.querySelectorAll("[data-pk]").forEach(x=>p[x.dataset.pk]=x.checked); };
+  const read=()=>{ f.querySelectorAll("[data-p]").forEach(x=>{ p[x.dataset.p]=x.value; }); op.params.filter(x=>x.type==="cols"||x.type==="qcols"||x.type==="ncols").forEach(pr=>{ p[pr.k]=[...f.querySelectorAll(`[data-pc="${pr.k}"]:checked`)].map(x=>x.value); }); f.querySelectorAll("[data-pk]").forEach(x=>p[x.dataset.pk]=x.checked); };
   f.querySelectorAll("[data-re],[data-p='agg']").forEach(x=>x.onchange=()=>{ read(); pqFormRender(e,res); });
   document.getElementById("pq-add").onclick=()=>{ read();
     op.params.forEach(pr=>{ if (p[pr.k]===undefined){ if (pr.type==="select") p[pr.k]=pr.options[0]; if (pr.type==="check") p[pr.k]=pr.def; } });
