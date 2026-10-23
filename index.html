@@ -720,6 +720,7 @@ function ev0(n, ctx){
       if (n.f==="LET"){ const a=n.args; if (a.length<3||a.length%2===0) return [[E("#VALUE!","LET needs name, value pairs and then a final calculation.")]];
         const env=Object.assign(Object.create(null), ctx.env||{}); const c2={...ctx, env};
         for (let i=0;i<a.length-1;i+=2){ const nm=a[i];
+          if (nm.k==="pct"&&nm.e&&nm.e.k==="name") return [[E("#NAME?", `LET names can't contain %. Excel reads "${nm.e.v}%" as ${nm.e.v} divided by 100. Use a name like ${nm.e.v}pct or ${nm.e.v}share.`)]];
           if (nm.k!=="name") return [[E("#NAME?", nm.k==="ref" ? "LET names can't look like cell addresses (such as A1 or KG1). Pick a name like rev or total." : "Each LET name must be a plain word, such as total.")]];
           env[nm.v.toLowerCase()]=ev(a[i+1],c2); if (ctx.trace&&nm.s!==undefined&&!ctx.trace.has(nm)) ctx.trace.set(nm, env[nm.v.toLowerCase()]); }
         return ev(a[a.length-1],c2); }
