@@ -201,6 +201,32 @@ details.data .tables{display:flex;flex-direction:column;gap:16px;margin-top:14px
 .hovertip b.bad{color:#ff9d8f}
 .hovertip span{opacity:.9;line-height:1.4}
 [hidden]{display:none!important}
+.exhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.item.noteit .no{font-weight:700;color:var(--accent)}
+.item.noteit span:last-child{color:var(--accent);font-weight:500}
+.ntoc{display:flex;flex-wrap:wrap;gap:6px}
+.ntoc a{font-size:.82rem;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--bg)}
+.ntoc a:hover{border-color:var(--accent)}
+.nsec{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:14px;scroll-margin-top:16px}
+.nh{font-family:var(--display);font-size:1.12rem;text-transform:none;letter-spacing:0;color:var(--ink);font-weight:600}
+.np{margin:0;max-width:68ch}
+.np code,.nlist code,.ntbl td code,.ntip code,.nwarn code{background:var(--grid);border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:.84em}
+.ncode{margin:0;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:4px;font-family:var(--mono);font-size:.82rem;overflow-x:auto;white-space:pre;line-height:1.6}
+.nlist{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;max-width:68ch}
+.ntblw{overflow-x:auto}
+.ntbl{border-collapse:collapse;font-size:.9rem;width:100%}
+.ntbl th,.ntbl td{border-bottom:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+.ntbl th{width:38%;font-weight:500;white-space:nowrap}
+.ntbl th code{font-size:.82rem;color:var(--accent)}
+.ntip{margin:0;background:var(--good-bg);border-radius:6px;padding:8px 12px;max-width:68ch}
+.nwarn{margin:0;background:var(--bad-bg);border-radius:6px;padding:8px 12px;max-width:68ch}
+.npract{display:flex;flex-direction:column;gap:4px}
+.nex{display:flex;gap:10px;align-items:center;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:.92rem}
+.nex:hover{border-color:var(--accent);background:var(--hl)}
+.nex .no{font-family:var(--mono);font-size:.74rem;color:var(--muted);width:22px;text-align:right}
+.nex .tick{margin-left:auto;color:var(--good);font-weight:700}
+@media (max-width:560px){.ntbl th{white-space:normal;width:45%}}
+
 .tblnote{font-size:.88rem;background:var(--hl);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 6px 6px 0;max-width:72ch}
 .tblnote code{background:var(--surface);border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:.82rem}
 
@@ -1625,6 +1651,203 @@ const PQ_SRC_EXPR = {
 };
 
 
+// ===== Training notes, one lesson per topic =====
+// block types: p (paragraph, supports `code`), code, list, tbl (rows: [term, meaning]), tip, warn
+const NOTES = {
+"Core formulas": { lead:"The everyday workhorses: conditional sums and counts, IF, and dates. Most analyst reports are built on these.",
+ sec:[
+  {h:"SUMIFS and COUNTIFS", b:[
+   {p:"Add up (or count) only the rows that meet every condition. Conditions always come in pairs: the column to test, then what to look for."},
+   {code:`=SUMIFS(sum_range, criteria_range1, criteria1, criteria_range2, criteria2, …)
+=COUNTIFS(criteria_range1, criteria1, …)`},
+   {p:"Example: Cape Town revenue from Express shipments."},
+   {code:`=SUMIFS(Shipments[Revenue (R)], Shipments[Branch], "Cape Town", Shipments[Service], "Express")`},
+   {tbl:[["\"Cape Town\"","Equals (not case-sensitive)"],["\">=300\"","Operator and number, inside quotes"],["\">=\"&DATE(2026,1,1)","Operator joined to a value with &"],["\"Cape*\"","Wildcard: starts with Cape"],["\"<>Total\"","Not equal to"]]},
+   {warn:"Never write the condition as a comparison, like Shipments[Date]>=DATE(2026,1,1). SUMIFS wants the range and the condition as two separate arguments."}]},
+  {h:"IF and IFS", b:[
+   {code:`=IF(logical_test, value_if_true, value_if_false)
+=IFS(test1, value1, test2, value2, TRUE, default)`},
+   {p:"Give IF a whole column and it returns one answer per row, which spills: `=IF(Shipments[Weight (kg)]>=500, \"Heavy\", \"Standard\")`."},
+   {tip:"Test for the specific problem, like B2=0, rather than wrapping everything in IFERROR. IFERROR also hides typos and broken references."}]},
+  {h:"Dates are numbers", b:[
+   {p:"Excel stores each date as a count of days since 1 January 1900. 1 Jan 2026 is 46023. That's why you can subtract dates, and why a number can suddenly display as a date (or the reverse) when the format changes."},
+   {tbl:[["DATE(y, m, d)","Build a date. Always use this rather than typing 2026-01-01"],["YEAR / MONTH / DAY","Pull a part out of a date"],["EOMONTH(date, n)","Last day of the month, n months away (0 = this month)"],["EDATE(date, n)","Same day n months away"],["WEEKDAY(date, 2)","1 = Monday … 7 = Sunday"],["NETWORKDAYS(start, end)","Working days between, both ends included"],["WORKDAY(start, n)","Date n working days later"],["DAYS(end, start)","Days between (or just subtract)"],["TEXT(date, \"mmm yyyy\")","A label like Jan 2026 (returns text)"]]},
+   {warn:"2026-01-01 typed inside a formula is maths: 2026 − 1 − 1 = 2024. Use DATE(2026,1,1)."}]},
+  {h:"Common errors", b:[
+   {tbl:[["#VALUE!","Wrong type of value, e.g. text where a number is needed"],["#DIV/0!","Dividing by zero or an empty cell"],["#NAME?","Misspelt function or name, or text without quotes"],["Answer shows as a date","Only the format is wrong. Change it to General or Number"]]}]}
+ ]},
+"Spill basics": { lead:"In Microsoft 365, one formula can return many values. They spill into the cells below and beside it.",
+ sec:[
+  {h:"What a spill is", b:[
+   {p:"Type `=UNIQUE(Shipments[Branch])` in one cell and it fills as many rows as there are branches. Only the first cell holds the formula; the rest is the spill range, shown with a blue border in Excel (dashed green here)."},
+   {list:["Don't drag spilling formulas down. One formula is the whole answer.","The spill resizes by itself when the data changes.","You can't edit or delete one cell inside a spill. Change the formula instead."]}]},
+  {h:"The # spill reference", b:[
+   {p:"`H5#` means the whole spill that starts in H5, however big it is today. Use it to feed other formulas, charts and data validation lists."},
+   {code:`H5:  =SORT(UNIQUE(Shipments[Branch]))
+I5:  =COUNTIFS(Shipments[Branch], H5#)`},
+   {tip:"COUNTIFS, SUMIFS, XLOOKUP and most other functions return one result per item when you give them a spill. That's how a whole summary table grows from a few formulas."}]},
+  {h:"Lifting", b:[
+   {p:"A function built for one value returns many when you give it many. `=DATE(2026, SEQUENCE(12), 1)` returns the first of every month, because SEQUENCE(12) feeds 1 to 12 into the month argument."}]},
+  {h:"Key functions", b:[
+   {tbl:[["UNIQUE(array)","Each value once, in order of first appearance"],["SORT(array, [col], [1/-1])","Sort, ascending by default"],["SEQUENCE(rows, [cols], [start], [step])","A list of numbers"],["TRANSPOSE(array)","Turn a column into a row"]]}]},
+  {h:"Errors you'll see", b:[
+   {tbl:[["#SPILL!","Something is in the way. Clear the cells the result needs"],["#CALC!","The result is empty, e.g. a FILTER with no matches"],["@ in an old formula","Implicit intersection: Excel keeps a legacy formula returning one value"]]}]}
+ ]},
+"Filter & sort": { lead:"Pull out exactly the rows and columns you need, in the order you need them, and keep it live.",
+ sec:[
+  {h:"FILTER", b:[
+   {code:`=FILTER(array, include, [if_empty])`},
+   {p:"include must be one TRUE/FALSE per row, the same height as array."},
+   {code:`=FILTER(Shipments[ID], Shipments[Branch]="Durban", "None found")`}]},
+  {h:"AND and OR inside FILTER", b:[
+   {p:"AND( ) and OR( ) collapse everything into a single TRUE or FALSE, so they can't work row by row. Use arithmetic instead:"},
+   {tbl:[["AND","(condition1) * (condition2)"],["OR","(condition1) + (condition2)"]]},
+   {code:`=FILTER(Shipments[ID], (Shipments[Branch]="Johannesburg") * (Shipments[Service]="Express"))`},
+   {tip:"TRUE × TRUE = 1 and anything × FALSE = 0, so multiplying is AND. Adding gives 1 or more if any condition is TRUE, so it's OR."}]},
+  {h:"Choosing and ordering", b:[
+   {tbl:[["CHOOSECOLS(array, 1, 4, 7)","Pick columns by position"],["SORT(array, col, -1)","Sort by a column inside the array"],["SORTBY(array, by_array, -1)","Sort by any column, even one you don't return"],["TAKE(array, 5)","First 5 rows (negative = last rows)"],["DROP(array, 1)","Remove the first row"]]},
+   {code:`=TAKE(SORTBY(CHOOSECOLS(Shipments,1,4,7), Shipments[Revenue (R)], -1), 5)`},
+   {p:"Read it inside-out: choose three columns, sort them by revenue (largest first), keep the top five."}]},
+  {h:"Why not Data → Sort or Filter?", b:[
+   {p:"Sorting or filtering a spilled result by hand gives \"You can't change part of an array\". Formula versions are better anyway: they update the moment the data changes, and nobody has to remember to redo them."}]}
+ ]},
+"Summaries": { lead:"Build pivot-style summaries with formulas that update instantly, with no Refresh button.",
+ sec:[
+  {h:"The two-step pattern", b:[
+   {code:`H5:  =SORT(UNIQUE(Shipments[Branch]))
+I5:  =SUMIFS(Shipments[Revenue (R)], Shipments[Branch], H5#)`},
+   {p:"One spill holds the keys; a second formula calculates one value per key by pointing at it with #."}]},
+  {h:"One formula with LET and HSTACK", b:[
+   {code:`=LET(b, SORT(UNIQUE(Shipments[Branch])),
+    HSTACK(b, SUMIFS(Shipments[Revenue (R)], Shipments[Branch], b)))`}]},
+  {h:"Cross-tabs: rows × columns", b:[
+   {p:"A column spill and a row spill together give a grid: SUMIFS runs once per combination."},
+   {code:`I5:  =TRANSPOSE(SORT(UNIQUE(Shipments[Service])))
+H6:  =SORT(UNIQUE(Shipments[Branch]))
+I6:  =SUMIFS(Shipments[Revenue (R)], Shipments[Branch], H6#, Shipments[Service], I5#)`}]},
+  {h:"GROUPBY and PIVOTBY", b:[
+   {p:"The newest Microsoft 365 builds have pivot functions. Use 0, 0 for no header row and no totals."},
+   {code:`=GROUPBY(Shipments[Branch], Shipments[Revenue (R)], SUM, 0, 0)
+=PIVOTBY(Shipments[Branch], Shipments[Service], Shipments[Revenue (R)], SUM)`},
+   {tip:"Formula summaries vs PivotTables: formulas update live and can feed other formulas; PivotTables are faster to explore and handle very large data. Analysts use both."}]}
+ ]},
+"Lookups": { lead:"Bring a value across from another table. XLOOKUP is the modern default.",
+ sec:[
+  {h:"XLOOKUP", b:[
+   {code:`=XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])`},
+   {tbl:[["match_mode 0","Exact match (the default)"],["match_mode -1 / 1","Exact or next smaller / next larger, e.g. rate bands"],["match_mode 2","Wildcards * and ?"],["search_mode -1","Search from the bottom: finds the latest match"]]},
+   {code:`=XLOOKUP("Baobab Traders", Shipments[Client], Shipments[Revenue (R)], , 0, -1)`}]},
+  {h:"Look up a whole list at once", b:[
+   {p:"Give XLOOKUP a spill as the lookup value and it returns one answer per item:"},
+   {code:`=XLOOKUP(H5#, Clients[Client], Clients[Account manager])`}]},
+  {h:"Two conditions", b:[
+   {code:`=XLOOKUP(1, (Shipments[Branch]="Durban") * (Shipments[Service]="Road"), Shipments[ID])`},
+   {p:"The multiplication gives 1 only where both are true; XLOOKUP finds the first 1."}]},
+  {h:"INDEX and MATCH, and why not VLOOKUP", b:[
+   {code:`=INDEX(Clients[Tier], MATCH("Fynbos Pharma", Clients[Client], 0))`},
+   {list:["Always use 0 in MATCH for an exact match.","VLOOKUP uses a column number, which points at the wrong data when someone inserts a column.","VLOOKUP defaults to approximate match, which gives silent wrong answers."]}]},
+  {h:"Why #N/A?", b:[
+   {list:["Extra spaces: \"Durban \" isn't \"Durban\". Fix with TRIM or in Power Query.","Numbers stored as text, or the reverse.","The value really isn't there. Use if_not_found to show a clear message."]}]}
+ ]},
+"Tables & names": { lead:"Tables and names make formulas readable and make them grow with the data.",
+ sec:[
+  {h:"Excel Tables", b:[
+   {p:"Select your data and press Ctrl+T. The table gets a name (Table Design → Table Name) and every column becomes referable by its header. New rows are included automatically in every formula, chart and PivotTable that uses the table."}]},
+  {h:"Structured references", b:[
+   {tbl:[["Shipments[Revenue (R)]","The whole column (data rows only)"],["Shipments","The whole table body"],["Clients[[Client]:[Tier]]","Adjacent columns from Client to Tier"],["Shipments[#Headers]","The header row"],["[@[Revenue (R)]]","This row's value: calculated columns only"]]},
+   {p:"Column names with spaces or brackets need double brackets after @: `[@[Weight (kg)]]`; simple names don't: `[@Branch]`."},
+   {warn:"Avoid cell ranges like Data!G2:G31. They don't grow with the data and don't say what they mean. These drills only accept table references."}]},
+  {h:"Calculated columns", b:[
+   {p:"Type one formula in a new column of a table and Excel fills it for every row, including rows added later."},
+   {code:`=ROUND([@[Revenue (R)]] / [@[Weight (kg)]], 2)`}]},
+  {h:"Named constants", b:[
+   {p:"Formulas → Name Manager → New. Name: VatRate, Refers to: =0.15. Then write `*(1+VatRate)` anywhere. When the rate changes, you update it once."},
+   {list:["Names start with a letter, have no spaces, and can't look like a cell address (KG1 is a cell).","Scope: workbook names work everywhere; sheet names only on one sheet.","Avoid OFFSET-based dynamic ranges. They're volatile and slow; tables or # do the job better."]}]}
+ ]},
+"LET & LAMBDA": { lead:"Name the steps of a calculation, then turn reusable calculations into your own functions.",
+ sec:[
+  {h:"LET", b:[
+   {code:`=LET(name1, value1, name2, value2, …, final_calculation)`},
+   {code:`=LET(
+    ct,    SUMIFS(Shipments[Revenue (R)], Shipments[Branch], "Cape Town"),
+    total, SUM(Shipments[Revenue (R)]),
+ ct / total)`},
+   {list:["Each named value is calculated once, so long formulas get faster.","Later names can use earlier ones.","Use Alt+Enter to put each step on its own line."]},
+   {warn:"Names can only use letters, numbers, _ and full stops. cpt_% fails because % means divide by 100, and names like kg1 fail because they look like cell addresses."}]},
+  {h:"Keep columns aligned", b:[
+   {p:"When you build a table with HSTACK, every column must be in the same order as the key column. Sorting one column on its own (SORT around a SUMIFS) breaks the pairing. To order the table, sort the finished table:"},
+   {code:`=SORT(HSTACK(b, ROUND(rev/kg, 2)), 2, -1)`}]},
+  {h:"LAMBDA: your own functions", b:[
+   {code:`=LAMBDA(x, x * 1.15)(1000)      ← test it in a cell: returns 1150`},
+   {p:"When it works, copy the LAMBDA part into Name Manager. Name: RPK, Refers to: `=LAMBDA(rev, kg, ROUND(rev/kg, 2))`. Now `=RPK(…, …)` works like a built-in function."}]},
+  {h:"Helper functions", b:[
+   {tbl:[["MAP(array, LAMBDA(x, …))","Run a calculation for each item"],["BYROW(array, LAMBDA(row, …))","One result per row"],["BYCOL(array, LAMBDA(col, …))","One result per column"],["REDUCE(start, array, LAMBDA(acc, x, …))","Roll everything up into one value"]]},
+   {p:"Use MAP when the per-item calculation itself returns an array, like a distinct count with UNIQUE and FILTER, which SUMIFS-style lifting can't do."}]}
+ ]},
+"Power Query": { lead:"Clean and reshape data with recorded steps that replay on every refresh.",
+ sec:[
+  {h:"How it works", b:[
+   {p:"Data → Get Data opens the Power Query editor. Each click becomes an Applied Step, recorded in the M language (View → Advanced Editor). Next month you drop in the new file and click Refresh All; every step runs again."},
+   {list:["Source: where the data comes from (file, folder, table, database).","Transform: the steps.","Load: to a sheet, or Only Create Connection and add to the Data Model."]}]},
+  {h:"Key transformations", b:[
+   {tbl:[["Remove top rows, Use first row as headers","Fix report-style files"],["Trim, Capitalize Each Word, Replace values","Clean text"],["Change type","Make numbers and dates real numbers and dates"],["Filter rows","Drop totals, blanks and test rows"],["Unpivot other columns","Months across columns → rows"],["Group by","Summarise, like a pivot"],["Merge queries","Join columns from another table (a lookup)"],["Append queries","Stack tables with the same columns"]]}]},
+  {h:"Unpivot OTHER columns", b:[
+   {p:"Select the ID columns (e.g. Branch) and choose Unpivot Other Columns. Next quarter's new month columns are unpivoted automatically. Selecting Jan–Mar and choosing Unpivot Columns would ignore April."}]},
+  {h:"Merge vs Append", b:[
+   {tbl:[["Merge","Adds columns from another table where a key matches, like XLOOKUP for a whole table"],["Append","Adds rows from tables with the same layout, like VSTACK"]]}]},
+  {h:"Folder queries and errors", b:[
+   {p:"Get Data → From Folder → Combine combines every file with the same layout in a folder: the standard way to handle monthly files."},
+   {warn:"\"The column 'X' of the table wasn't found\" means a source header changed. Steps such as Changed Type store column names, so fix the header at the source or edit that step."}]}
+ ]},
+"Data model & DAX": { lead:"Relate tables instead of looking values up, and write measures that calculate for whatever the report is showing.",
+ sec:[
+  {h:"The model", b:[
+   {p:"Load tables to the Data Model and relate them on a key. A star schema has a fact table (Shipments: many rows of transactions) linked to dimension tables (Clients, Dates, Branches) with one row per item."},
+   {code:`Clients[Client]  1 ──── ∞  Shipments[Client]`},
+   {p:"Filters flow from the one side to the many side: filter Clients[Tier] and Shipments is filtered too."}]},
+  {h:"Measures vs calculated columns", b:[
+   {tbl:[["Measure","Calculated when the report asks, for the current filters. Use for totals, ratios, KPIs"],["Calculated column","Stored per row at refresh. Use for row attributes you'll filter or group by"]]},
+   {code:`Total Revenue := SUM(Shipments[Revenue (R)])`}]},
+  {h:"Filter context and CALCULATE", b:[
+   {p:"Every cell of a pivot has its own filters (this branch, this month…). The same measure gives a different number in each cell. CALCULATE changes those filters:"},
+   {code:`Express Revenue := CALCULATE([Total Revenue], Shipments[Service] = "Express")
+% of Total      := DIVIDE([Total Revenue], CALCULATE([Total Revenue], ALL(Shipments)))`},
+   {tip:"ALL removes filters. Dividing by the ALL version gives a share of the grand total in every row."}]},
+  {h:"Iterators: SUMX and RELATED", b:[
+   {p:"When the calculation depends on each row, iterate:"},
+   {code:`Commission := SUMX(Shipments,
+    Shipments[Revenue (R)] * IF(RELATED(Clients[Tier]) = "Gold", 0.05, 0.03))`},
+   {p:"RELATED fetches a value from the one side of the relationship for the current row."}]},
+  {h:"Habits", b:[
+   {list:["Build measures on measures: reuse [Total Revenue] rather than repeating SUM.","Use DIVIDE instead of / so empty filters give blank, not an error.","SUMIFS and VLOOKUP are worksheet functions; in DAX, CALCULATE and relationships do that work."]}]}
+ ]},
+"VBA & automation": { lead:"Automate the repetitive parts: refreshing, formatting, and processing files.",
+ sec:[
+  {h:"Where code lives", b:[
+   {tbl:[["Standard Module (Insert → Module)","Normal macros you run with a button or Alt+F8"],["ThisWorkbook module","Workbook events like Workbook_Open"],["Sheet modules","Events for one sheet, e.g. Worksheet_Change"]]},
+   {warn:"Save as .xlsm. Saving as .xlsx deletes the macros."}]},
+  {h:"Patterns you'll use constantly", b:[
+   {code:`ThisWorkbook.RefreshAll                          ' refresh queries, connections, pivots
+Application.ScreenUpdating = False               ' speed up; set True at the end
+lastRow = Cells(Rows.Count, "A").End(xlUp).Row   ' last used row in column A
+Range("H5").Formula2 = "=SORT(UNIQUE(Shipments[Branch]))"   ' write a spilling formula`}]},
+  {h:"Looping through files", b:[
+   {code:`f = Dir("C:\\Rates\\*.xlsx")
+Do While f <> ""
+    ' open and process f here
+    f = Dir()          ' next file; "" when done
+Loop`}]},
+  {h:"Events", b:[
+   {code:`Private Sub Workbook_Open()      ' in ThisWorkbook
+    ThisWorkbook.RefreshAll
+End Sub`},
+   {p:"Auto_Open is the old approach and only works in a standard module."}]},
+  {h:"Good habits", b:[
+   {list:["Use Formula2, not Formula, when writing dynamic array formulas, or Excel adds @.","Turn off background refresh on queries if a macro must wait for data before refreshing pivots.","Add an error handler that switches ScreenUpdating back on.","Prefer Power Query or formulas over VBA when they can do the job: they're easier for others to maintain."]}]}
+ ]}
+};
+
+
 const META = {"exp": {"1": {"h": ["Branch"], "r": [["Gqeberha"], ["Cape Town"], ["Johannesburg"], ["Durban"]]}, "2": {"h": ["Client"], "r": [["Baobab Traders"], ["Cederberg Foods"], ["Fynbos Pharma"], ["Karoo Textiles"], ["Kloof Electronics"], ["Protea Retail"], ["Table Bay Hardware"], ["Umhlanga Auto"]]}, "3": {"h": ["Branch", "Shipments"], "r": [["Cape Town", 9], ["Durban", 4], ["Gqeberha", 8], ["Johannesburg", 9]]}, "4": {"h": ["Month start"], "r": [["01 Jan 2026"], ["01 Feb 2026"], ["01 Mar 2026"], ["01 Apr 2026"], ["01 May 2026"], ["01 Jun 2026"], ["01 Jul 2026"], ["01 Aug 2026"], ["01 Sep 2026"], ["01 Oct 2026"], ["01 Nov 2026"], ["01 Dec 2026"]]}, "5": {"h": ["Client", "Revenue (R)"], "r": [["Baobab Traders", 9541], ["Cederberg Foods", 11112], ["Kloof Electronics", 4272], ["Cederberg Foods", 3025], ["Karoo Textiles", 6644], ["Kloof Electronics", 7252], ["Fynbos Pharma", 4275], ["Cederberg Foods", 4921], ["Kloof Electronics", 1955]]}, "6": {"h": ["ID", "Client", "Revenue (R)"], "r": [["SH-1011", "Baobab Traders", 6597], ["SH-1015", "Karoo Textiles", 8683]]}, "7": {"h": ["ID"], "r": [["SH-1001"], ["SH-1003"], ["SH-1004"], ["SH-1005"], ["SH-1006"], ["SH-1007"], ["SH-1009"], ["SH-1012"], ["SH-1017"], ["SH-1018"], ["SH-1022"], ["SH-1023"], ["SH-1025"], ["SH-1027"]]}, "8": {"h": ["ID", "Client", "Revenue (R)"], "r": [["SH-1018", "Table Bay Hardware", 15149], ["SH-1001", "Umhlanga Auto", 13719], ["SH-1022", "Fynbos Pharma", 11584], ["SH-1007", "Cederberg Foods", 11112], ["SH-1027", "Kloof Electronics", 10261]]}, "9": {"h": ["ID"], "r": [["None found"]]}, "10": {"h": ["Branch", "Revenue (R)"], "r": [["Cape Town", 52997], ["Durban", 9982], ["Gqeberha", 56029], ["Johannesburg", 48795]]}, "12": {"h": ["Client", "Account manager"], "r": [["Baobab Traders", "Thandi Mokoena"], ["Cederberg Foods", "Pieter Botha"], ["Fynbos Pharma", "Ayesha Patel"], ["Karoo Textiles", "Sipho Dlamini"], ["Kloof Electronics", "Thandi Mokoena"], ["Protea Retail", "Ayesha Patel"], ["Table Bay Hardware", "Sipho Dlamini"], ["Umhlanga Auto", "Pieter Botha"]]}, "13": {"h": ["Revenue (R)"], "r": [[6597]]}, "14": {"h": ["CT share"], "r": [[0.3158286800593553]]}, "15": {"h": ["Branch", "Rand per kg"], "r": [["Cape Town", 15.51], ["Durban", 11.53], ["Gqeberha", 17.28], ["Johannesburg", 14.21]]}, "11": {"h": ["", "Express", "Overnight", "Road"], "r": [["Cape Town", 15384, 26462, 11151], ["Durban", 5848, 0, 4134], ["Gqeberha", 10261, 37499, 8269], ["Johannesburg", 15280, 18284, 15231]]}}, "thr": 5000, "client": "Baobab Traders", "E": [[1, "Spill basics", "Your first spill: UNIQUE", "List every branch once, in the order it first appears in the Shipments table.", "UNIQUE"], [2, "Spill basics", "Sort a spilled list", "List every client once, sorted A to Z.", "SORT, UNIQUE"], [3, "Spill basics", "Point at a spill with #", "In H5 list the branches A to Z. In I5 count the shipments for each branch, referring to your list with H5#.", "SORT, UNIQUE, COUNTIFS, #"], [4, "Spill basics", "Generate a list with SEQUENCE", "Return the first day of every month in 2026 (12 dates, one per row). Format the cells as dates.", "DATE, SEQUENCE"], [5, "Filter & sort", "FILTER with one condition", "Return the Client and Revenue of every Cape Town shipment, in table order.", "FILTER, CHOOSECOLS"], [6, "Filter & sort", "FILTER with AND", "Return the ID, Client and Revenue of shipments that are from Johannesburg AND use the Express service.", "FILTER, CHOOSECOLS, *"], [7, "Filter & sort", "FILTER with OR", "Return the IDs of shipments that are Overnight OR have revenue above R10,000.", "FILTER, +"], [8, "Filter & sort", "Top 5 with SORTBY and TAKE", "Return the ID, Client and Revenue of the 5 highest-revenue shipments, highest first.", "SORTBY, TAKE, CHOOSECOLS"], [9, "Filter & sort", "Handle an empty FILTER", "Return the IDs of Durban shipments with revenue above R5,000. If there are none, the formula must show the text: None found", "FILTER (3rd argument)"], [10, "Summaries", "Revenue by branch", "Build a two-column summary: branches A to Z, and total revenue per branch next to them.", "SORT, UNIQUE, SUMIFS, #  (or GROUPBY)"], [11, "Summaries", "A cross-tab from two spills", "Leave H5 empty. In I5 spill the services A to Z across the row. In H6 spill the branches A to Z down the column. In I6 write ONE formula that fills the revenue grid.", "TRANSPOSE, SORT, UNIQUE, SUMIFS, #  (or PIVOTBY)"], [12, "Lookups", "XLOOKUP a whole list", "In H5 list the clients A to Z. In I5 return each client's account manager from the Clients table with ONE XLOOKUP that spills.", "XLOOKUP, #"], [13, "Lookups", "Find the latest match", "Shipments are in date order. Return the revenue of the most recent shipment for Baobab Traders.", "XLOOKUP (search_mode -1)"], [14, "LET & LAMBDA", "Name your steps with LET", "Return Cape Town's share of total revenue as a decimal (format it as a %). Use LET to name the Cape Town total and the overall total.", "LET, SUMIFS, SUM"], [15, "LET & LAMBDA", "Capstone: a LET that spills a table", "With ONE formula in H5, return branches A to Z and revenue per kg for each (total revenue ÷ total weight), rounded to 2 decimals.", "LET, SORT, UNIQUE, SUMIFS, HSTACK, ROUND"]], "rows": [["SH-1001", "2026-01-10", "Gqeberha", "Umhlanga Auto", "Overnight", 626, 13719], ["SH-1002", "2026-01-13", "Gqeberha", "Fynbos Pharma", "Road", 482, 4343], ["SH-1003", "2026-01-16", "Cape Town", "Baobab Traders", "Overnight", 430, 9541], ["SH-1004", "2026-01-22", "Johannesburg", "Baobab Traders", "Overnight", 89, 1838], ["SH-1005", "2026-01-24", "Johannesburg", "Karoo Textiles", "Overnight", 55, 1297], ["SH-1006", "2026-01-28", "Gqeberha", "Karoo Textiles", "Overnight", 264, 5808], ["SH-1007", "2026-02-02", "Cape Town", "Cederberg Foods", "Express", 695, 11112], ["SH-1008", "2026-02-07", "Cape Town", "Kloof Electronics", "Express", 260, 4272], ["SH-1009", "2026-02-11", "Cape Town", "Cederberg Foods", "Overnight", 135, 3025], ["SH-1010", "2026-02-13", "Durban", "Table Bay Hardware", "Road", 42, 228], ["SH-1011", "2026-02-16", "Johannesburg", "Baobab Traders", "Express", 409, 6597], ["SH-1012", "2026-02-21", "Cape Town", "Karoo Textiles", "Overnight", 301, 6644], ["SH-1013", "2026-02-23", "Durban", "Protea Retail", "Road", 444, 3906], ["SH-1014", "2026-02-26", "Johannesburg", "Cederberg Foods", "Road", 86, 862], ["SH-1015", "2026-03-03", "Johannesburg", "Karoo Textiles", "Express", 546, 8683], ["SH-1016", "2026-03-06", "Gqeberha", "Table Bay Hardware", "Road", 429, 3926], ["SH-1017", "2026-03-09", "Cape Town", "Kloof Electronics", "Overnight", 336, 7252], ["SH-1018", "2026-03-12", "Johannesburg", "Table Bay Hardware", "Overnight", 682, 15149], ["SH-1019", "2026-03-14", "Cape Town", "Fynbos Pharma", "Road", 477, 4275], ["SH-1020", "2026-03-16", "Durban", "Kloof Electronics", "Express", 100, 1488], ["SH-1021", "2026-03-18", "Johannesburg", "Karoo Textiles", "Road", 640, 5798], ["SH-1022", "2026-03-22", "Gqeberha", "Fynbos Pharma", "Overnight", 520, 11584], ["SH-1023", "2026-03-25", "Gqeberha", "Fynbos Pharma", "Overnight", 182, 4013], ["SH-1024", "2026-03-28", "Johannesburg", "Karoo Textiles", "Road", 669, 6154], ["SH-1025", "2026-03-31", "Gqeberha", "Umhlanga Auto", "Overnight", 105, 2375], ["SH-1026", "2026-04-02", "Cape Town", "Cederberg Foods", "Road", 549, 4921], ["SH-1027", "2026-04-05", "Gqeberha", "Kloof Electronics", "Express", 635, 10261], ["SH-1028", "2026-04-09", "Johannesburg", "Cederberg Foods", "Road", 258, 2417], ["SH-1029", "2026-04-15", "Cape Town", "Kloof Electronics", "Road", 233, 1955], ["SH-1030", "2026-04-17", "Durban", "Table Bay Hardware", "Express", 280, 4360]], "clients": {"Baobab Traders": ["Gold", "Thandi Mokoena"], "Cederberg Foods": ["Silver", "Pieter Botha"], "Fynbos Pharma": ["Gold", "Ayesha Patel"], "Karoo Textiles": ["Bronze", "Sipho Dlamini"], "Kloof Electronics": ["Silver", "Thandi Mokoena"], "Protea Retail": ["Bronze", "Ayesha Patel"], "Table Bay Hardware": ["Silver", "Sipho Dlamini"], "Umhlanga Auto": ["Gold", "Pieter Botha"]}};
 const GUIDE = {
 1:{h:["UNIQUE takes a single column and returns each value once.","Point it at the whole Table column: Shipments[Branch]."],
@@ -1777,12 +2000,13 @@ function okStatus(fresh){ setStatus({state:"ok",title:fresh?"Correct! That's the
 function renderNav(){
   const pct=Math.round(done.size/EXS.length*100);
   document.getElementById("prog").innerHTML=`${done.size} of ${EXS.length} solved<div class="meter"><span style="width:${pct}%"></span></div>`;
-  const curGroup=byId[cur].group;
+  const curGroup=curNote||byId[cur].group;
   document.getElementById("list").innerHTML=ORDER.map(([g])=>{ const es=EXS.filter(e=>e.group===g); const d=es.filter(e=>done.has(e.id)).length;
-    return `<details class="grp" ${g===curGroup?"open":""}><summary><h3>${esc(g)}</h3><span class="cnt ${d===es.length?"full":""}">${d}/${es.length}</span></summary><div class="items">${es.map(e=>`
-      <button class="item" data-id="${e.id}" aria-current="${e.id===cur}"><span class="no">${e.num}</span><span>${esc(e.title)}</span>${done.has(e.id)?'<span class="tick" aria-label="solved">✓</span>':""}</button>`).join("")}</div></details>`; }).join("");
-  document.querySelectorAll("#list .item").forEach(b=>b.onclick=()=>go(b.dataset.id));
-  document.getElementById("pick").innerHTML=ORDER.map(([g])=>`<optgroup label="${esc(g)}">${EXS.filter(e=>e.group===g).map(e=>`<option value="${e.id}" ${e.id===cur?"selected":""}>${done.has(e.id)?"✓ ":""}${e.num}. ${esc(e.title)}</option>`).join("")}</optgroup>`).join("");
+    return `<details class="grp" ${g===curGroup?"open":""}><summary><h3>${esc(g)}</h3><span class="cnt ${d===es.length?"full":""}">${d}/${es.length}</span></summary><div class="items"><button class="item noteit" data-note="${esc(g)}" aria-current="${curNote===g}"><span class="no">≡</span><span>Notes</span></button>${es.map(e=>`
+      <button class="item" data-id="${e.id}" aria-current="${!curNote&&e.id===cur}"><span class="no">${e.num}</span><span>${esc(e.title)}</span>${done.has(e.id)?'<span class="tick" aria-label="solved">✓</span>':""}</button>`).join("")}</div></details>`; }).join("");
+  document.querySelectorAll("#list .item[data-id]").forEach(b=>b.onclick=()=>go(b.dataset.id));
+  document.querySelectorAll("#list .item[data-note]").forEach(b=>b.onclick=()=>openNote(b.dataset.note));
+  document.getElementById("pick").innerHTML=ORDER.map(([g])=>`<optgroup label="${esc(g)}"><option value="note:${esc(g)}" ${curNote===g?"selected":""}>≡ ${esc(g)} notes</option>${EXS.filter(e=>e.group===g).map(e=>`<option value="${e.id}" ${!curNote&&e.id===cur?"selected":""}>${done.has(e.id)?"✓ ":""}${e.num}. ${esc(e.title)}</option>`).join("")}</optgroup>`).join("");
 }
 
 // ---------- card frame ----------
@@ -1791,7 +2015,7 @@ function renderEx(){
   const hasExp=e.kind!=="vba";
   const body={sheet:sheetBody,calc:calcBody,pq:pqBody,dax:daxBody,vba:vbaBody}[e.kind](e);
   document.getElementById("ex").innerHTML=`
-    <div><h3>Exercise ${e.num} · ${esc(e.group)}</h3><h2 style="margin-top:4px">${esc(e.title)}</h2></div>
+    <div class="exhead"><div><h3>Exercise ${e.num} · ${esc(e.group)}</h3><h2 style="margin-top:4px">${esc(e.title)}</h2></div><button class="btn sm quiet" id="toNotes">≡ ${esc(e.group)} notes</button></div>
     <p class="task">${esc(e.task)}</p>
     ${body}
     <div class="actions">
@@ -1801,6 +2025,7 @@ function renderEx(){
     </div>
     <div id="reveals"></div>
     <div class="foot"><button class="btn quiet" id="prev" ${e.num===1?"disabled":""}>Previous</button><button class="btn" id="next" ${e.num===EXS.length?"disabled":""}>Next exercise</button></div>`;
+  document.getElementById("toNotes").onclick=()=>openNote(e.group);
   document.getElementById("bhint").onclick=()=>{ shown.hints=Math.min(shown.hints+1,e.h.length); refreshActions(e); };
   if (hasExp) document.getElementById("bexp").onclick=()=>{ shown.exp=!shown.exp; refreshActions(e); };
   document.getElementById("bsol").onclick=()=>{ shown.sol=!shown.sol; refreshActions(e); };
@@ -2576,9 +2801,35 @@ function renderTables(){
   document.getElementById("tables").innerHTML=`<div><p class="small" style="margin:0 0 6px">Shipments · ${sh.length} rows in date order · refer to columns like <code>Shipments[Branch]</code></p>${miniTable(WBI.shCols,sh,1,1)}</div>
      <div><p class="small" style="margin:0 0 6px">Clients · one row per client</p>${miniTable(WBI.clCols,WBI.cl,10,1)}</div>`;
 }
-function go(id){ if (!byId[id]) return; cur=id; shown={hints:0,exp:false,sol:false}; activeCell=null; pqSel=null; pqForm={op:"skip",p:{}};
+let curNote=null;
+const inl=s=>esc(s).replace(/`([^`]+)`/g,"<code>$1</code>");
+function noteBlock(b){
+  if (b.p) return `<p class="np">${inl(b.p)}</p>`;
+  if (b.code) return `<pre class="ncode">${esc(b.code)}</pre>`;
+  if (b.list) return `<ul class="nlist">${b.list.map(x=>`<li>${inl(x)}</li>`).join("")}</ul>`;
+  if (b.tbl) return `<div class="ntblw"><table class="ntbl"><tbody>${b.tbl.map(([k,v])=>`<tr><th><code>${esc(k)}</code></th><td>${inl(v)}</td></tr>`).join("")}</tbody></table></div>`;
+  if (b.tip) return `<p class="ntip"><b>Tip.</b> ${inl(b.tip)}</p>`;
+  if (b.warn) return `<p class="nwarn"><b>Watch out.</b> ${inl(b.warn)}</p>`;
+  return "";
+}
+function openNote(g){
+  if (!NOTES[g]) return; curNote=g; renderNav();
+  const N=NOTES[g], es=EXS.filter(e=>e.group===g), gi=ORDER.findIndex(([x])=>x===g);
+  document.getElementById("ex").innerHTML=`
+    <div class="exhead"><div><h3>Training notes · topic ${gi+1} of ${ORDER.length}</h3><h2 style="margin-top:4px">${esc(g)}</h2></div></div>
+    <p class="task">${esc(N.lead)}</p>
+    <nav class="ntoc" aria-label="On this page">${N.sec.map((s,i)=>`<a href="#n${i}" data-sec="${i}">${esc(s.h)}</a>`).join("")}</nav>
+    ${N.sec.map((s,i)=>`<section class="nsec" id="nsec${i}"><h3 class="nh">${esc(s.h)}</h3>${s.b.map(noteBlock).join("")}</section>`).join("")}
+    <section class="nsec"><h3 class="nh">Practise this topic</h3><div class="npract">${es.map(e=>`<button class="nex" data-go="${e.id}"><span class="no">${e.num}</span><span>${esc(e.title)}</span>${done.has(e.id)?'<span class="tick">✓</span>':""}</button>`).join("")}</div></section>
+    <div class="foot">${gi>0?`<button class="btn quiet" data-note-go="${esc(ORDER[gi-1][0])}">← ${esc(ORDER[gi-1][0])} notes</button>`:"<span></span>"}<button class="btn" data-go="${es[0].id}">Start the exercises</button></div>`;
+  document.querySelectorAll("#ex [data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
+  document.querySelectorAll("#ex [data-note-go]").forEach(b=>b.onclick=()=>openNote(b.dataset.noteGo));
+  document.querySelectorAll("#ex .ntoc a").forEach(a=>a.onclick=ev=>{ ev.preventDefault(); document.getElementById("nsec"+a.dataset.sec).scrollIntoView({behavior:"smooth",block:"start"}); });
+  document.getElementById("datacard").hidden=false; window.scrollTo({top:0});
+}
+function go(id){ if (!byId[id]) return; curNote=null; cur=id; shown={hints:0,exp:false,sol:false}; activeCell=null; pqSel=null; pqForm={op:"skip",p:{}};
   renderNav(); renderEx(); window.scrollTo({top:0}); }
-document.getElementById("pick").onchange=ev=>go(ev.target.value);
+document.getElementById("pick").onchange=ev=>{ const v=ev.target.value; if (v.startsWith("note:")) openNote(v.slice(5)); else go(v); };
 renderNav(); renderTables(); renderEx();
 </script>
 
