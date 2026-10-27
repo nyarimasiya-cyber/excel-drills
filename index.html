@@ -306,6 +306,7 @@ table.xl td.err::before,table.xl td.pe::before{content:"";position:absolute;top:
 table.xl td.pe::after{content:"⚠";color:var(--bad);font-weight:700}
 @media (max-width:480px){.card{padding:16px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.tracks{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;font-size:.85rem;width:max-content}.tracks a{padding:4px 14px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:600}.tracks a:hover{color:var(--ink)}.tracks a[aria-current]{background:var(--accent);color:var(--accent-ink)}
 </style>
 
 <style>body{margin:0} [hidden]{display:none!important} img{max-width:100%}</style>
@@ -314,6 +315,7 @@ table.xl td.pe::after{content:"⚠";color:var(--bad);font-weight:700}
 <div class="wrap">
   <div class="top">
     <header>
+      <nav class="tracks" aria-label="Course" style="margin-bottom:12px"><a href="./" aria-current="page">Excel</a><a href="python/">Python</a></nav>
       <h1>Excel Analyst Drills</h1>
       <p class="lede">Hands-on practice for analyst roles: formulas and dynamic arrays, tables and LAMBDA, Power Query, DAX and VBA. Type as you would in Excel, with function suggestions and argument tips, and get instant feedback on your result.</p>
     </header>
