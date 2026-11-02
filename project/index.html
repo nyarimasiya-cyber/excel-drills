@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Build a dynamic freight forwarding dashboard in Excel from raw TMS exports: OS, freight and DS charges, TEU, GP and on-time performance.">
+<title>Freight Dashboard Project</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a job brief, read top to bottom like a work order. Scenario and downloads first, then the data and rules,
+   then the requirements checklist and the checkpoints that only say right or wrong. */
+:root{
+  --bg:#f3f6f3; --surface:#ffffff; --ink:#17231c; --muted:#5b6a60; --line:#d3dcd5; --grid:#eaf0eb;
+  --accent:#1d6b45; --accent-ink:#ffffff; --hl:#e6f1ea; --input:#fff4b8; --input-ink:#5c4a00;
+  --good:#1b7646; --good-bg:#e1f2e7; --bad:#b0352a; --bad-bg:#fae6e2; --os:#2f6fa8; --frt:#8a5a12; --ds:#7a3d8c;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Courier New",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1511; --surface:#171f1a; --ink:#e3ebe5; --muted:#98a79d; --line:#2b3730; --grid:#1f2923;
+  --accent:#55c28a; --accent-ink:#0a1a11; --hl:#1c2a22; --input:#3d3512; --input-ink:#f3dc7a;
+  --good:#62cd93; --good-bg:#15301f; --bad:#f08a7c; --bad-bg:#3a1e1a; --os:#7cb4e6; --frt:#e2ad5c; --ds:#cf9ade; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0f1511; --surface:#171f1a; --ink:#e3ebe5; --muted:#98a79d; --line:#2b3730; --grid:#1f2923;
+  --accent:#55c28a; --accent-ink:#0a1a11; --hl:#1c2a22; --input:#3d3512; --input-ink:#f3dc7a;
+  --good:#62cd93; --good-bg:#15301f; --bad:#f08a7c; --bad-bg:#3a1e1a; --os:#7cb4e6; --frt:#e2ad5c; --ds:#cf9ade; color-scheme:dark;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 64px}
+[hidden]{display:none!important}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+.wrap>*{min-width:0}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(1.9rem,5vw,2.7rem);font-weight:800;letter-spacing:-.015em}
+h2{font-size:1.45rem;font-weight:600;margin-bottom:12px}
+h3{font-size:1.05rem;font-weight:600}
+p{margin:0;max-width:68ch}
+code{font-family:var(--mono);font-size:.86em;background:var(--grid);padding:1px 5px;border-radius:4px}
+a{color:var(--accent)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tracks{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;font-size:.85rem;width:max-content}
+.tracks a{padding:4px 14px;border-radius:999px;text-decoration:none;color:var(--muted);font-weight:600}
+.tracks a:hover{color:var(--ink)}
+.tracks a[aria-current]{background:var(--accent);color:var(--accent-ink)}
+.eyebrow{font-family:var(--mono);font-size:.76rem;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);margin:22px 0 8px}
+.lede{color:var(--muted);font-size:1.12rem;margin-top:12px}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:18px;font-size:.9rem;color:var(--muted)}
+.facts b{color:var(--ink);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:14px}
+
+/* work-order strip */
+.order{border:1px solid var(--line);background:var(--surface);border-radius:12px;overflow:hidden}
+.order-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px dashed var(--line);font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.order-body{padding:18px;display:flex;flex-direction:column;gap:12px}
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-top:4px}
+.flow div{flex:1 1 150px;padding:10px 14px;border:1px solid var(--line);margin:-1px 0 0 -1px;display:flex;flex-direction:column;gap:2px}
+.flow b{font-family:var(--mono);font-size:.82rem}
+.flow span{font-size:.85rem;color:var(--muted)}
+.flow .os b{color:var(--os)} .flow .frt b{color:var(--frt)} .flow .ds b{color:var(--ds)}
+
+/* downloads */
+.dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dlc{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-decoration:none;color:var(--ink)}
+.dlc:hover{border-color:var(--accent)}
+.dlc .t{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.dlc b{font-family:var(--display);font-weight:600;font-size:1.08rem}
+.dlc span{font-size:.9rem;color:var(--muted)}
+.dlc.lock{border-style:dashed}
+.small{font-size:.88rem;color:var(--muted)}
+
+/* data dictionary */
+.dict{border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow-x:auto}
+.dict table{border-collapse:collapse;width:100%;font-size:.88rem}
+.dict th{text-align:left;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+.dict td{padding:8px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+.dict tr:last-child td{border-bottom:0}
+.dict td:first-child{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+.dict td:nth-child(2){font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+
+/* rules */
+ol.rules{margin:0;padding:0;list-style:none;counter-reset:r;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+ol.rules li{counter-increment:r;display:grid;grid-template-columns:2.4em minmax(0,1fr);gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+ol.rules li::before{content:"R" counter(r);font-family:var(--mono);font-size:.78rem;color:var(--accent);font-weight:600;padding-top:2px}
+
+/* checklist */
+.req{display:flex;flex-direction:column;gap:18px}
+.req fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:2px}
+.req legend{font-family:var(--display);font-weight:600;font-size:1.05rem;margin-bottom:6px;padding:0}
+.req label{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:7px 10px;border-radius:6px;cursor:pointer}
+.req label:hover{background:var(--hl)}
+.req input{width:17px;height:17px;margin:3px 0 0;accent-color:var(--accent)}
+.req input:checked + span{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+.meter{height:6px;background:var(--grid);border-radius:3px;overflow:hidden}
+.meter span{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.mtxt{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:6px;font-variant-numeric:tabular-nums}
+
+/* checkpoints */
+.cps{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.cp{display:grid;grid-template-columns:3.2em minmax(0,1fr);gap:4px 10px;padding:16px 18px;border-top:1px solid var(--line)}
+.cp:first-child{border-top:0}
+.cp .no{font-family:var(--mono);font-size:.8rem;color:var(--muted);padding-top:3px}
+.cp .q{font-weight:500}
+.cp .unit{font-family:var(--mono);font-size:.72rem;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.cp form{grid-column:2;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.cp input[type=text]{font:500 .95rem var(--mono);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--input-ink);width:220px;max-width:100%}
+.cp .go{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:.88rem;padding:7px 14px;border-radius:6px}
+.res{font-size:.88rem;font-weight:600;padding:5px 10px;border-radius:6px;font-variant-numeric:tabular-nums}
+.res.ok{background:var(--good-bg);color:var(--good)}
+.res.no{background:var(--bad-bg);color:var(--bad)}
+.cp.solved .no{color:var(--good)}
+.cp.solved .no::after{content:" ✓"}
+.stage{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding:12px 18px;background:var(--grid);font-size:.85rem;color:var(--muted)}
+.stage b{font-family:var(--display);font-size:1.02rem;color:var(--ink);font-weight:600}
+
+details.gl{border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+details.gl summary{cursor:pointer;padding:14px 18px;font-family:var(--display);font-weight:600;font-size:1.1rem}
+.gloss{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;padding:0 18px 16px}
+.gloss div{padding:9px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:1px}
+.gloss b{font-family:var(--mono);font-size:.84rem}
+.gloss span{font-size:.9rem;color:var(--muted)}
+.reset{background:none;border:0;padding:0;color:var(--muted);text-decoration:underline;font-size:.85rem}
+@media (max-width:640px){.dl,.gloss{grid-template-columns:1fr} .cp{grid-template-columns:1fr} .cp form{grid-column:1} .cp .no{padding-top:0}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="tracks" aria-label="Course"><a href="../">Excel</a><a href="../python/">Python</a><a href="./" aria-current="page">Project</a></nav>
+    <div class="eyebrow">Capstone project · Freight forwarding</div>
+    <h1>Freight Dashboard Project</h1>
+    <p class="lede">Build a dynamic management dashboard in Excel from raw TMS exports. There are no worked steps, hints or model answers. You have the brief, the data and the business rules. The checkpoints only tell you whether your figure is right.</p>
+    <div class="facts"><span><b>Tools</b> Microsoft 365 Excel, Power Query, PivotTables or Power Pivot</span><span><b>Data</b> 7 monthly exports, about 500 jobs and 3,000 charge lines</span><span><b>Time</b> about one working day</span></div>
+  </header>
+
+  <section class="stack">
+    <h2>The brief</h2>
+    <div class="order">
+      <div class="order-head"><span>WORK ORDER · COMMERCIAL ANALYTICS</span><span>Southern Cross Forwarding (fictional)</span></div>
+      <div class="order-body">
+        <p>Southern Cross Forwarding moves sea, air and road cargo for South African importers and exporters through branches in Johannesburg, Cape Town and Durban. Every job can earn money at three stages of the move, and the commercial manager wants to see where the gross profit is made.</p>
+        <div class="flow">
+          <div class="os"><b>OS · Origin Services</b><span>Collection, export clearance, origin handling and documents</span></div>
+          <div class="frt"><b>Freight</b><span>The main carriage by sea, air or road, plus surcharges</span></div>
+          <div class="ds"><b>DS · Destination Services</b><span>Terminal handling, port dues, import clearance and delivery</span></div>
+        </div>
+        <p>Today the branches send spreadsheets by email and nobody trusts the totals. Your job is to turn the monthly TMS exports into one dashboard that management can filter themselves, and that updates when next month's export is dropped into the folder.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack">
+    <h2>Downloads</h2>
+    <div class="dl">
+      <a class="dlc" href="data/Freight_Dashboard_Data.zip" download><span class="t">Stage 1 · start here</span><b>Freight_Dashboard_Data.zip</b><span>The <code>TMS Exports</code> folder with January to June 2026, plus <code>Reference.xlsx</code>.</span></a>
+      <a class="dlc lock" href="data/TMS_Export_2026-07.xlsx" download><span class="t">Stage 2 · only after stage 1</span><b>TMS_Export_2026-07.xlsx</b><span>July's export. Download it when your dashboard is finished, then drop it into the folder.</span></a>
+    </div>
+    <p class="small">Individual files: <a href="data/Reference.xlsx" download>Reference.xlsx</a>, <a href="data/TMS_Export_2026-01.xlsx" download>TMS_Export_2026-01.xlsx</a>, <a href="data/TMS_Export_2026-02.xlsx" download>TMS_Export_2026-02.xlsx</a>, <a href="data/TMS_Export_2026-03.xlsx" download>TMS_Export_2026-03.xlsx</a>, <a href="data/TMS_Export_2026-04.xlsx" download>TMS_Export_2026-04.xlsx</a>, <a href="data/TMS_Export_2026-05.xlsx" download>TMS_Export_2026-05.xlsx</a>, <a href="data/TMS_Export_2026-06.xlsx" download>TMS_Export_2026-06.xlsx</a></p>
+  </section>
+
+  <section class="stack">
+    <h2>The data</h2>
+    <p>Each <code>TMS_Export_YYYY-MM.xlsx</code> holds the jobs booked in that month, on two sheets. The exports come straight out of the transport management system and were never cleaned. Finding and dealing with what's wrong in them is part of the project.</p>
+    <div class="dict"><table>
+      <thead><tr><th>Sheet</th><th>Columns</th><th>One row is</th></tr></thead>
+      <tbody>
+        <tr><td>Jobs</td><td>Job No, Booking Date, Branch, Client, Mode, Incoterm, Origin Country, Origin, Destination Country, Destination, Agent, Equipment, ETD, ETA, ATA, Status</td><td>One shipment (job)</td></tr>
+        <tr><td>Charges</td><td>Line ID, Job No, Charge Code, Currency, Cost, Sell</td><td>One charge on a job, in its billing currency</td></tr>
+      </tbody>
+    </table></div>
+    <div class="dict"><table>
+      <thead><tr><th>Reference.xlsx</th><th>Columns</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td>Charge Codes</td><td>Charge Code, Description, Charge Group</td><td>Which stage (OS, Freight, DS) each charge belongs to</td></tr>
+        <tr><td>FX Rates</td><td>Month, Currency, ZAR per unit</td><td>Monthly USD and EUR rates</td></tr>
+        <tr><td>Clients</td><td>Client, Industry, Account Manager</td><td>The client master list</td></tr>
+        <tr><td>GP Targets</td><td>Branch, Month, GP Target (ZAR)</td><td>Monthly gross profit target per branch</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small">Job statuses are as at the export date: 3 July 2026 for January to June, and 3 August 2026 for July.</p>
+  </section>
+
+  <section class="stack">
+    <h2>Business rules</h2>
+    <p>These define every figure. The checkpoints are calculated with exactly these rules.</p>
+    <ol class="rules">
+      <li><span>A job belongs to the month of its <b>Booking Date</b>.</span></li>
+      <li><span><b>Cancelled</b> jobs and all their charge lines are excluded from every figure.</span></li>
+      <li><span><b>Revenue</b> is Sell, <b>cost</b> is Cost, <b>GP</b> is Sell − Cost and <b>GP margin</b> is GP ÷ Revenue.</span></li>
+      <li><span>All reporting is in rand. USD and EUR amounts convert at the FX rate for the job's booking month. ZAR amounts are already in rand.</span></li>
+      <li><span>A charge's <b>group</b> (OS, Freight or DS) is taken from the Charge Codes table.</span></li>
+      <li><span>A job is an <b>Export</b> when its Origin Country is South Africa and an <b>Import</b> otherwise.</span></li>
+      <li><span><b>TEU</b>: each 20-foot container is 1 TEU and each 40-foot container (40GP or 40HC) is 2 TEU. Sea LCL, Air and Road jobs carry 0 TEU.</span></li>
+      <li><span><b>On time</b> means a Delivered job whose ATA is on or before its ETA. On-time % is calculated over Delivered jobs only.</span></li>
+      <li><span>Each <b>Line ID</b> is one charge and counts once.</span></li>
+      <li><span>A client is the client named in the Clients table, whatever capitals or spacing the export used. The same applies to Mode.</span></li>
+      <li><span>Round only the final figure, never the individual lines.</span></li>
+    </ol>
+  </section>
+
+  <section class="stack">
+    <h2>What the dashboard must do</h2>
+    <p>Tick each requirement off as you meet it. Your ticks are saved in this browser.</p>
+    <div><div class="mtxt"><span>Requirements met</span><span id="req-count"></span></div><div class="meter"><span id="req-bar"></span></div></div>
+    <div class="req" id="req"></div>
+  </section>
+
+  <section class="stack" id="checkpoints">
+    <h2>Checkpoints</h2>
+    <p>Use your dashboard to answer these. Enter rand amounts as whole numbers (spaces or commas are fine) and percentages as a number of percent to one decimal, such as <code>12.5</code>. You only find out whether an entry is right. Nothing on this page tells you the answer.</p>
+    <div><div class="mtxt"><span>Checkpoints solved</span><span id="cp-count"></span></div><div class="meter"><span id="cp-bar"></span></div></div>
+    <div class="cps" id="cps"></div>
+    <p class="small" id="nocrypto" hidden>Your browser blocked the answer checker. Open this page over https (for example on the live site) to use the checkpoints.</p>
+    <div><button class="reset" id="reset" type="button">Clear my ticks and checkpoint progress</button></div>
+  </section>
+
+  <section>
+    <details class="gl">
+      <summary>Logistics glossary</summary>
+      <div class="gloss" id="gloss"></div>
+    </details>
+  </section>
+</div>
+
+<script>
+const SALT = "scf-dash-2026-11";
+const CP = [{"id": "c01", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "How many live (not cancelled) jobs were booked from January to June?", "kind": "count", "h": "392abf2bba9c9d583b9bd608081fa77fdb0b2f47b809f382dac9854729f4628f", "scale": 1, "tol": 0}, {"id": "c02", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was total revenue, January to June?", "kind": "rand", "h": "49fc0dc25a35f3dc9a5819dea3131198ef5d27a0df8fb2e412114b559eabae91", "scale": 1, "tol": 2}, {"id": "c03", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was total GP, January to June?", "kind": "rand", "h": "1f42fcb8dead440a2d9ab952fed62c23c04706cec1a263bdbdfb0033f3635938", "scale": 1, "tol": 2}, {"id": "c04", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was the overall GP margin, January to June?", "kind": "pct", "h": "319cd53130f223e60a94721bc3b0b42c38d403fc2303e839923372ff6ba04c01", "scale": 10, "tol": 1}, {"id": "c05", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "How many TEU did Sea FCL jobs carry, January to June?", "kind": "count", "h": "4e7495fc41d88200a6ee15a92ee81a8518975fd357647258497b95beb069193c", "scale": 1, "tol": 0}, {"id": "c06", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "On Sea FCL imports, what share of revenue came from the Freight charge group?", "kind": "pct", "h": "ee9978a209eaa5c15e45926e0b5b519e465910be24aeb93fc54e232ef8bf5b24", "scale": 10, "tol": 1}, {"id": "c07", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "Which client generated the most GP, January to June?", "kind": "text", "h": "29e0c32a96e459be3a108fa6d97d31f6be9f02509ffd2eddcfd5c9ce80774f51"}, {"id": "c08", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was the Cape Town branch's Destination Services (DS) GP in March?", "kind": "rand", "h": "6317d2b20e132b20c43eb6a65f6f7fa926962cb56155894cce860b6538f6d50b", "scale": 1, "tol": 2}, {"id": "c09", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was the on-time delivery % for Air jobs, January to June?", "kind": "pct", "h": "7be883a512b9cd3ba30d0ceb38f9e8a827e8ca900bbb9c2a35361c5173097e64", "scale": 10, "tol": 1}, {"id": "c10", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "In how many of the 18 branch-months (3 branches \u00d7 6 months) did GP meet or beat the target?", "kind": "count", "h": "9fa6c1912d62bd97dd675d10e733d45bae519bb2111850d6f123278eaa3b4067", "scale": 1, "tol": 0}, {"id": "c11", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "What was GP per TEU on Sea FCL exports in April to June?", "kind": "rand", "h": "0b79e85948b28ef15aa1e1d4e31b1bea6e260e5151db3bebd5ba274785036a6f", "scale": 1, "tol": 2}, {"id": "c12", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "Which origin country generated the most GP on import jobs, January to June?", "kind": "text", "h": "842d3879593e12e53d198a56af1595b9f967688406ccc9d133b2bbc4dfdb0729"}, {"id": "c13", "stage": "Stage 1", "stageNote": "January to June 2026", "q": "Which account manager's clients generated the most GP, January to June?", "kind": "text", "h": "c3a729cf6698ce4f03a6e6060f77c9d5a686f03240c7aaa9e401d37c6b93a259"}, {"id": "c14", "stage": "Stage 2", "stageNote": "After adding July and refreshing", "q": "What was total GP, January to July?", "kind": "rand", "h": "4b284e6fcfb51f4eb136c3b36d7839b52877f3619e75ba1500de222e15fb4bb5", "scale": 1, "tol": 2}, {"id": "c15", "stage": "Stage 2", "stageNote": "After adding July and refreshing", "q": "What was Johannesburg's July GP minus its July GP target? Enter a negative number if it was under target.", "kind": "rand", "h": "f3314b19e0d89011e714fe6c07d1be4c4c30b1a0da1cbf59a04030e738a7060b", "scale": 1, "tol": 2}, {"id": "c16", "stage": "Stage 2", "stageNote": "After adding July and refreshing", "q": "By what % did total GP change from June to July? Enter a negative number for a fall.", "kind": "pct", "h": "ad0fecc31a0dcaab9420ddfd0effcc59f0117f224f40db0b6c06e31d91f3dd8d", "scale": 10, "tol": 1}];
+const REQ = [
+  ["Data model", [
+    "All monthly exports load from the TMS Exports folder through one query. A new file needs only Refresh, with no edits to queries or formulas.",
+    "The export problems are handled in the query steps, not by editing the source files.",
+    "The reference tables are connected to the data through lookups or Data Model relationships.",
+    "Every number on the dashboard comes from a formula, PivotTable or measure. Nothing is typed in."]],
+  ["Dashboard", [
+    "KPI cards for Jobs, TEU, Revenue, Cost, GP, GP margin % and On-time %.",
+    "Filters for month, branch, mode and direction (import or export), and every visual responds to them.",
+    "Monthly trend of revenue and GP with the GP target shown against it.",
+    "GP split by OS, Freight and DS.",
+    "Top 10 clients by GP.",
+    "A lane view: GP by origin country and destination country.",
+    "Branch performance against GP target, with a clear over or under signal.",
+    "Agent performance: number of jobs and on-time % by agent."]],
+  ["Presentation", [
+    "The dashboard fits on one screen at 100% zoom.",
+    "Every chart has a title that says what it shows, and units (R, %, TEU) are visible.",
+    "A 'data as at' label that updates on refresh."]],
+  ["Stage 2", [
+    "July's export added to the folder and refreshed: every KPI, chart and filter includes July with no other changes.",
+    "Stretch: a one-click refresh button using a VBA macro."]]
+];
+const GLOSS = [
+  ["OS · Origin Services", "Charges at the shipping end: collection, export customs clearance, origin terminal handling and documents."],
+  ["DS · Destination Services", "Charges at the receiving end: destination terminal handling, port dues, import clearance and delivery."],
+  ["Freight", "The main carriage between origin and destination, plus surcharges such as BAF or fuel."],
+  ["TMS", "Transport management system: the operational system the jobs and charges are exported from."],
+  ["FCL / LCL", "Full container load (the client books whole containers) or less than container load (cargo shares a container, charged per CBM)."],
+  ["TEU", "Twenty-foot equivalent unit, the standard measure of container volume. A 40-foot container is 2 TEU."],
+  ["20GP / 40GP / 40HC", "20-foot general purpose, 40-foot general purpose and 40-foot high cube containers."],
+  ["CBM", "Cubic metre, the volume unit for LCL cargo."],
+  ["Chargeable weight", "For air cargo, the greater of actual and volumetric weight, in kg."],
+  ["ETD / ETA / ATA", "Estimated time of departure, estimated time of arrival and actual time of arrival."],
+  ["Incoterm", "The trade term (EXW, FCA, FOB, CIF, DAP, DDP) that sets which costs the buyer and seller pay. It decides which OS, Freight and DS charges a client is billed."],
+  ["BAF", "Bunker adjustment factor, a fuel surcharge on ocean freight."],
+  ["THC", "Terminal handling charge for moving containers within the port terminal."],
+  ["Cargo dues", "Port authority charges levied on cargo passing through the port."],
+  ["Agent", "The overseas partner that handles the foreign end of a shipment."],
+  ["Lane", "An origin and destination pair, for example Shanghai to Durban."],
+  ["GP · Gross profit", "Sell minus cost. A forwarder's GP is the margin on what it buys from carriers and agents."],
+  ["Tautliner / Superlink", "Common South African truck types for road freight: a curtain-sided trailer and an interlink rig."]
+];
+
+const KEY = "freightProject.v1";
+let st = {};
+try { st = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { st = {}; }
+st.req = st.req || {}; st.cp = st.cp || {};
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// requirements
+const reqEl = document.getElementById("req");
+let rn = 0;
+reqEl.innerHTML = REQ.map(([g, items]) => `<fieldset><legend>${esc(g)}</legend>${items.map(t => { const id = "rq" + (rn++); return `<label for="${id}"><input type="checkbox" id="${id}" ${st.req[id] ? "checked" : ""}><span>${esc(t)}</span></label>`; }).join("")}</fieldset>`).join("");
+function reqMeter() {
+  const done = Object.values(st.req).filter(Boolean).length;
+  document.getElementById("req-count").textContent = `${done} of ${rn}`;
+  document.getElementById("req-bar").style.width = (done / rn * 100) + "%";
+}
+reqEl.addEventListener("change", e => { st.req[e.target.id] = e.target.checked; save(); reqMeter(); });
+reqMeter();
+
+document.getElementById("gloss").innerHTML = GLOSS.map(([t, d]) => `<div><b>${esc(t)}</b><span>${esc(d)}</span></div>`).join("");
+
+// checkpoints
+const UNIT = { count: "Count", rand: "Rand", pct: "Percent", text: "Name" };
+let html = "", stage = "";
+CP.forEach((c, i) => {
+  if (c.stage !== stage) { stage = c.stage; html += `<div class="stage"><b>${esc(stage)}</b><span>${esc(c.stageNote)}</span></div>`; }
+  const s = st.cp[c.id] || {};
+  html += `<div class="cp ${s.ok ? "solved" : ""}" id="cp-${c.id}"><span class="no">C${String(i + 1).padStart(2, "0")}</span><div><div class="q">${esc(c.q)}</div><div class="unit">${UNIT[c.kind]}</div></div>
+  <form data-id="${c.id}" novalidate><label for="in-${c.id}" hidden>Answer</label><input type="text" id="in-${c.id}" autocomplete="off" spellcheck="false" value="${esc(s.last || "")}" ${s.ok ? "readonly" : ""}>
+  ${s.ok ? "" : `<button class="go" type="submit">Check</button>`}<span class="res ${s.ok ? "ok" : ""}" ${s.ok ? "" : "hidden"}>${s.ok ? "Correct" : ""}</span></form></div>`;
+});
+document.getElementById("cps").innerHTML = html;
+function cpMeter() {
+  const done = CP.filter(c => (st.cp[c.id] || {}).ok).length;
+  document.getElementById("cp-count").textContent = `${done} of ${CP.length}`;
+  document.getElementById("cp-bar").style.width = (done / CP.length * 100) + "%";
+}
+cpMeter();
+
+function parseNum(raw) {
+  let s = raw.replace(/[R%\s ]/gi, "").replace(/[−–]/g, "-");
+  if (s.includes(".") && s.includes(",")) s = s.replace(/,/g, "");
+  else if (s.includes(",")) s = /,\d{3}(,|$)/.test(s) ? s.replace(/,/g, "") : s.replace(",", ".");
+  if (!/^-?\d*\.?\d+$/.test(s)) return null;
+  return parseFloat(s);
+}
+async function sha(t) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+async function check(c, raw) {
+  if (c.kind === "text") {
+    const norm = raw.trim().toLowerCase().replace(/\s+/g, " ");
+    return (await sha(`${SALT}:${c.id}:${norm}`)) === c.h;
+  }
+  const v = parseNum(raw);
+  if (v === null) return null;
+  const n = Math.floor(v * c.scale + 0.5);
+  for (let d = -c.tol; d <= c.tol; d++) if ((await sha(`${SALT}:${c.id}:${n + d}`)) === c.h) return true;
+  return false;
+}
+document.getElementById("cps").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, c = CP.find(x => x.id === f.dataset.id), inp = f.querySelector("input"), res = f.querySelector(".res");
+  if (!window.crypto || !crypto.subtle) { document.getElementById("nocrypto").hidden = false; return; }
+  const raw = inp.value;
+  if (!raw.trim()) return;
+  const ok = await check(c, raw);
+  const s = st.cp[c.id] = st.cp[c.id] || { tries: 0 };
+  res.hidden = false;
+  if (ok === null) { res.className = "res no"; res.textContent = "Enter a number"; return; }
+  s.tries++; s.last = raw;
+  if (ok) {
+    s.ok = true; res.className = "res ok"; res.textContent = "Correct";
+    inp.readOnly = true; f.querySelector(".go").remove(); f.closest(".cp").classList.add("solved");
+  } else {
+    res.className = "res no"; res.textContent = `Not correct · attempt ${s.tries}`;
+  }
+  save(); cpMeter();
+});
+document.getElementById("reset").addEventListener("click", function () {
+  if (this.dataset.armed) { st = { req: {}, cp: {} }; save(); location.reload(); return; }
+  this.dataset.armed = "1"; this.textContent = "Click again to clear everything";
+  setTimeout(() => { delete this.dataset.armed; this.textContent = "Clear my ticks and checkpoint progress"; }, 4000);
+});
+</script>
+</body>
+</html>
